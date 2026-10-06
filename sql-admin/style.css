@@ -1,0 +1,328 @@
+/* CoMyLi Modern Stylesheet */
+.comyli {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    color: #334155;
+    background: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1);
+    overflow-x: visible;
+    position: relative;
+    border: 1px solid #e2e8f0;
+    margin: 1rem 0;
+}
+
+.comyli input, .comyli select, .comyli textarea, .comyli button {
+    font-family: inherit;
+    font-size: 13px;
+    color: inherit;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    padding: 4px 8px;
+    background: #ffffff;
+    transition: all 0.2s ease;
+}
+
+.comyli input:focus, .comyli select:focus, .comyli textarea:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.comyli button, .comyli input[type="submit"] {
+    cursor: pointer;
+    background-color: #f1f5f9;
+    font-weight: 500;
+}
+.comyli button:hover, .comyli input[type="submit"]:hover {
+    background-color: #e2e8f0;
+}
+
+/* Base Table Layout */
+.comyli .table {
+    display: table;
+    table-layout: auto;
+    width: max-content;
+    min-width: 100%;
+    border-collapse: collapse;
+}
+
+.comyli .tr {
+    display: table-row;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.comyli .td {
+    display: table-cell;
+    vertical-align: middle;
+    padding: 8px 12px;
+    position: relative;
+    background: #ffffff;
+    white-space: pre-line;
+}
+.comyli .tr.comyli-no-print {
+    background-color: #ffffff;
+}
+/* Zebra Striping & Hover */
+.comyli .tr:nth-child(even) { background-color: #f8fafc; }
+.comyli .tr:hover { background-color: #f1f5f9; }
+
+/* Inputs within td take full width but look transparent until focused */
+.comyli .table > .tr > .td > input:not([type="checkbox"]):not([type="submit"]):not(.filter),
+.comyli .table > .tr > .td > select:not(.filter) {
+    width: 100%;
+    min-width: 60px;
+    border: 1px solid transparent;
+    padding: 6px;
+    margin: -6px; /* Offset padding to fill cell */
+}
+/* Textarea specific styling */
+.comyli .table > .tr > .td.textarea {
+    vertical-align: top;
+    padding: 4px;
+}
+.comyli .table > .tr > .td > textarea {
+    width: 100%;
+    min-width: 120px;
+    height: 38px;
+    resize: vertical;
+    border: 1px solid transparent;
+    padding: 4px 6px;
+    margin: 0;
+    box-sizing: border-box;
+    background: transparent;
+    line-height: 1.4;
+}
+.comyli .table > .tr > .td > input:not([type="checkbox"]):not([type="submit"]):hover,
+.comyli .table > .tr > .td > select:hover,
+.comyli .table > .tr > .td > textarea:hover { border-color: #cbd5e1; }
+.comyli .table > .tr > .td > input:focus,
+.comyli .table > .tr > .td > select:focus,
+.comyli .table > .tr > .td > textarea:focus { border-color: #3b82f6; background: #ffffff; }
+
+/* JSON Input / Select2 styling */
+.comyli .table > .tr > .td .select2-container {
+    min-width: 200px !important;
+    text-align: left;
+}
+
+/* Sticky Header */
+#colNames > .td {
+    position: sticky;
+    top: 32px;
+    z-index: 10;
+    background-color: #f1f5f9;
+    font-weight: 600;
+    font-size: 13px;
+    text-transform: none !important;
+    color: #475569;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.colNamesWrap, .colnames { display: flex; align-items: center; gap: 4px; }
+.sortBtn { text-decoration: none; font-size: 10px; opacity: 0.5; color: inherit; }
+.sortBtn:hover { opacity: 1; }
+.colnames { padding: 8px 0; font-weight: 600; text-transform: none !important; }
+
+.comyli .tr.formAdd { background-color: #f8fafc; font-weight: 500; }
+/* Action Buttons */
+.comyli .btnAdd, .comyli .btnSave, .comyli .btnDel { background: transparent; border: none; box-shadow: none; font-size: 16px; padding: 4px 8px; }
+.comyli .btnAdd { color: #3b82f6; }
+.comyli .btnSave { color: #10b981; }
+.comyli .btnDel { color: #ef4444; }
+.comyli .btnAdd:hover, .comyli .btnSave:hover, .comyli .btnDel:hover { background: rgba(0,0,0,0.05); }
+
+/* Search and Filter Rows */
+
+/* Pagination Menu */
+.comyli .tr.menu { background: #f8fafc; }
+.comyli .seitenListe {
+    height: 48px;
+}
+.comyli .seitenListe > div { 
+    position: absolute; 
+    top: 0; 
+    left: 0; 
+    height: 100%; 
+    width: max-content;
+    min-width: 100%;
+    padding: 0 12px;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-weight: 500;
+    box-sizing: border-box;
+    z-index: 5;
+}
+.comyli .seitenListe select {
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    font-weight: 500;
+}
+.comyli .seitenListe button {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 6px 12px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+/* Resize Handle */
+.comyli .column-resize-handle {
+    position: absolute;
+    top: 0;
+    right: -5px;
+    width: 10px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 1;
+    border-right: 1px solid #e2e8f0; /* Vertical line */
+    transition: background 0.2s, border-color 0.2s;
+}
+.comyli .column-resize-handle:hover,
+.comyli .column-resize-handle:active {
+    background: rgba(59, 130, 246, 0.1);
+    border-right-color: #3b82f6;
+}
+
+
+
+/* Toast Notification */
+.toast {
+    visibility: hidden;
+    opacity: 0;
+    min-width: 250px;
+    margin-left: -125px;
+    background-color: #334155;
+    color: #fff;
+    text-align: center;
+    border-radius: 8px;
+    padding: 12px 24px;
+    position: fixed;
+    z-index: 1000;
+    left: 50%;
+    bottom: 30px;
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transform: translateY(20px);
+}
+.toast.open {
+    visibility: visible;
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Print Media */
+@media print {
+    #colNames > .td { position: static; }
+    .comyli { border: none; box-shadow: none; margin: 0; }
+    .comyli .table > .tr > .td:nth-of-type(1),
+    .comyli .table > .tr.formAdd,
+    .comyli .comyli-no-print {
+        display: none !important;
+    }
+    .comyli .table > .tr > .td > input { border: none !important; }
+}
+
+/* Live-Sync Button */
+.comyli-btn-sync {
+    transition: all 0.2s ease-in-out;
+}
+.comyli-btn-sync:hover {
+    filter: brightness(1.1);
+}
+
+
+
+#toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; align-items: flex-end; } 
+.toast { position: relative; bottom: auto; right: auto; left: auto; margin-left: 0; visibility: visible; transform: none !important; opacity: 1; transition: opacity 0.3s; } 
+.toast.closing { opacity: 0; }
+
+
+
+/* Layout */
+.comyli.comyli-layout { 
+    display: flex; 
+    flex-direction: row; 
+    align-items: stretch; 
+    padding: 0; 
+    background: #fff; 
+    border: 1px solid #e2e8f0; 
+    border-radius: 8px; 
+    clear: both;
+}
+.comyli-sidebar { 
+    width: 250px; 
+    flex-shrink: 0; 
+    background: #f8fafc; 
+    border-right: 1px solid #e2e8f0; 
+    display: flex; 
+    flex-direction: column; 
+}
+.comyli-main { 
+    flex-grow: 1; 
+    padding: 20px; 
+    min-width: 0; 
+}
+@media (max-width: 768px) { 
+    .comyli.comyli-layout { flex-direction: column; } 
+    .comyli-sidebar { width: 100%; border-right: none; border-bottom: 1px solid #e2e8f0; } 
+}
+
+/* Sidebar Navigation */
+.comyli-sidebar-section { padding: 15px 0; border-bottom: 1px solid #e2e8f0; }
+.comyli-sidebar-section:last-child { border-bottom: none; }
+.comyli-sidebar-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin: 0 15px 10px; font-weight: 700; }
+.comyli-nav-list { display: flex; flex-direction: column; }
+.comyli-nav-link { display: block; padding: 8px 15px; color: #334155; text-decoration: none; transition: background 0.2s, color 0.2s; font-size: 13px; }
+.comyli-nav-link:hover { background: #f1f5f9; color: #0f172a; text-decoration: none; }
+.comyli-nav-link.active { background: #e0e7ff; color: #4338ca; font-weight: 500; border-left: 3px solid #4338ca; padding-left: 12px; }
+
+/* Sidebar Query Items */
+.comyli-nav-item { display: flex; align-items: center; justify-content: space-between; }
+.comyli-nav-item .comyli-nav-link { flex-grow: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.comyli-nav-item.active { background: #e0e7ff; border-left: 3px solid #4338ca; }
+.comyli-nav-item.active .comyli-nav-link { background: transparent; border: none; padding-left: 12px; font-weight: 500; color: #4338ca; }
+.comyli-edit-qry-btn { background: none; border: none; color: #94a3b8; cursor: pointer; padding: 5px 10px; opacity: 0.5; transition: opacity 0.2s; font-size:14px; }
+.comyli-nav-item:hover .comyli-edit-qry-btn { opacity: 1; }
+.comyli-edit-qry-btn:hover { color: #3b82f6; }
+.comyli-new-qry-btn { margin: 10px 15px 0; background: #fff; border: 1px dashed #cbd5e1; padding: 6px 10px; border-radius: 4px; color: #64748b; cursor: pointer; transition: all 0.2s; font-size: 12px; text-align: center; }
+.comyli-new-qry-btn:hover { border-color: #3b82f6; color: #3b82f6; background: #eff6ff; }
+
+/* Filter Full Width */
+.comyli .filterCell > div:first-child,
+.comyli .filterCell input.filter,
+.comyli .filterCell select.filter {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.comyli .filterCell input.filter,
+.comyli .filterCell select.filter {
+    border: 1px solid transparent;
+    background: transparent;
+    padding: 6px;
+    border-radius: 4px;
+}
+.comyli .filterCell input.filter:hover,
+.comyli .filterCell select.filter:hover {
+    border-color: #cbd5e1;
+}
+.comyli .filterCell input.filter:focus,
+.comyli .filterCell select.filter:focus {
+    border-color: #3b82f6;
+    background: #ffffff;
+    outline: none;
+}
+
+
+
+/* Filter Placeholder Styling */
+.comyli .filter::placeholder {
+    color: #94a3b8;
+    opacity: 0.8; /* Firefox overrides */
+    font-weight: 300;
+    font-style: italic;
+}
+
+

@@ -1,0 +1,58 @@
+.comyli.tables {
+	/* overflow: scroll; */
+}
+.comyli.tables > .table {
+	width: fit-content;
+}
+
+.comyli.tables .td {
+	padding: 0px;
+}
+.comyli.tables .colnames {
+	height:28px;
+	padding: 0 5px;
+}
+.comyli.tables input[type="submit"],
+.comyli.tables .filter,
+.comyli.tables select {
+	padding: 0;
+	padding-left: 0;
+}
+.comyli.tables input {
+	color: black;
+}
+
+.comyli.tables .btnSave, .comyli.tables .btnDel {
+	width: 30px;
+    padding: 5px;
+    background-color: lightgray;
+	border: 1px solid black;
+}
+
+.comyli.tables select[name="Positionsbezeichnung"]{
+	width: 120px;
+}
+.comyli.tables input[name="ZimmerNr"]{
+	width: 120px;
+}
+.comyli.tables input[name="Tel_intern"]{
+	width: 80px;
+}
+.comyli.tables input[name="Telefon"]{
+	width: 120px;
+}
+.comyli.tables input[name="Mobil"]{
+	width: 120px;
+}
+.comyli.tables input[name="username"]{
+	width: 100px;
+}
+
+.comyli.tables .sticky .colnames {
+    top: 40px;
+}
+
+.comyli.tables .select2Input,
+.comyli.tables .select2-container {
+	min-width: 200px !important;
+}
