@@ -17,6 +17,7 @@ class Plugin {
     private LegacySpecifics $legacySpecifics;
     private PostType $postType;
     private RestApi $restApi;
+    private Blocks $blocks;
 
     /**
      * Initializes the plugin components.
@@ -33,6 +34,7 @@ class Plugin {
         $this->legacySpecifics = new LegacySpecifics();
         $this->postType = new PostType($this->config);
         $this->restApi = new RestApi($this->config);
+        $this->blocks = new Blocks($this->config);
     }
 
     /**
@@ -46,6 +48,7 @@ class Plugin {
         $this->legacySpecifics->register();
         $this->postType->register();
         $this->restApi->register();
+        $this->blocks->register();
     }
 }
 

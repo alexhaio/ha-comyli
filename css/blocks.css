@@ -1,0 +1,127 @@
+/* CoMyLi Gutenberg Block Styles */
+
+/* KPI Card Block */
+.comyli-kpi-card {
+    display: flex;
+    flex-direction: column;
+    padding: 1.25rem 1.5rem;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    min-width: 200px;
+    box-sizing: border-box;
+}
+
+.comyli-kpi-card:hover {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.comyli-kpi-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+}
+
+.comyli-kpi-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 0;
+}
+
+.comyli-kpi-icon {
+    font-size: 1.25rem;
+    line-height: 1;
+}
+
+.comyli-kpi-body {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    margin-bottom: 0.5rem;
+}
+
+.comyli-kpi-value {
+    font-size: 2.25rem;
+    font-weight: 700;
+    line-height: 1.1;
+    color: #0f172a;
+}
+
+.comyli-kpi-unit {
+    font-size: 1rem;
+    font-weight: 500;
+    color: #64748b;
+}
+
+.comyli-kpi-footer {
+    display: flex;
+    align-items: center;
+    margin-top: auto;
+}
+
+.comyli-kpi-trend {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 12px;
+    display: inline-block;
+}
+
+.comyli-kpi-trend-up {
+    background-color: #dcfce7;
+    color: #15803d;
+}
+
+.comyli-kpi-trend-down {
+    background-color: #fee2e2;
+    color: #b91c1c;
+}
+
+.comyli-kpi-trend-neutral {
+    background-color: #f1f5f9;
+    color: #475569;
+}
+
+/* Chart Block */
+.comyli-chart-container {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1.25rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    margin: 1rem 0;
+    box-sizing: border-box;
+}
+
+.comyli-chart-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1e293b;
+    margin: 0 0 1rem 0;
+}
+
+.comyli-chart-canvas-wrap {
+    position: relative;
+    width: 100%;
+}
+
+/* Gutenberg Editor Preview specific */
+.wp-block[data-type^="ha-comyli/"] {
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}
+
+.comyli-block-placeholder {
+    padding: 2rem;
+    text-align: center;
+    background: #f8fafc;
+    border: 2px dashed #cbd5e1;
+    border-radius: 8px;
+    color: #64748b;
+}

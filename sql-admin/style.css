@@ -325,4 +325,99 @@
     font-style: italic;
 }
 
+/* ==========================================================================
+   AP1: Embedded & Clean Layout Styles (.comyli-embedded-grid, .comyli-clean-layout)
+   ========================================================================== */
+.comyli.comyli-embedded-grid,
+.comyli.comyli-clean-layout {
+    margin: 0;
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+    background: transparent;
+    width: 100%;
+}
+
+.comyli.comyli-clean-layout .comyli-main {
+    padding: 0;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+.comyli.comyli-embedded-grid .table.select.comyli {
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.comyli.comyli-embedded-grid .tr.menu.comyli-no-print {
+    border-bottom: 2px solid #e2e8f0;
+    background-color: #f8fafc;
+}
+
+/* ==========================================================================
+   AP3: Custom Column Formatter (2charta eAkte & Document Links)
+   ========================================================================== */
+.comyli-doc-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: #eff6ff;
+    color: #1d4ed8 !important;
+    border: 1px solid #bfdbfe;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 0.15s ease-in-out;
+}
+
+.comyli-doc-link:hover {
+    background: #dbeafe;
+    border-color: #93c5fd;
+    color: #1e40af !important;
+    text-decoration: none;
+    transform: translateY(-1px);
+}
+
+.comyli-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.comyli-badge-success { background: #dcfce7; color: #15803d; }
+.comyli-badge-warning { background: #fef9c3; color: #a16207; }
+.comyli-badge-danger  { background: #fee2e2; color: #b91c1c; }
+.comyli-badge-info    { background: #e0f2fe; color: #0369a1; }
+.comyli-badge-neutral { background: #f1f5f9; color: #475569; }
+
+.comyli-notice,
+.comyli-error {
+    padding: 10px 14px;
+    margin: 8px 0;
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+.comyli-notice {
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    color: #0369a1;
+}
+
+.comyli-error {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #b91c1c;
+}
+
+
 

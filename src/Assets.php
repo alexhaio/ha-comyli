@@ -31,6 +31,9 @@ class Assets {
         
         wp_register_style('TAwp_CSS', $url . 'css/style.css', [], $version);
         wp_enqueue_style('TAwp_CSS');
+
+        wp_register_style('ha_comyli_blocks_css', $url . 'css/blocks.css', [], $version);
+        wp_enqueue_style('ha_comyli_blocks_css');
         
         wp_register_script('TA_JS', $url . 'sql-admin/functions.js', [], $version);
         wp_enqueue_script('TA_JS');

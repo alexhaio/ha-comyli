@@ -309,14 +309,121 @@ class FieldHandler {
     }
 
     /**
-     * Resolves custom [QRY] markers recursively.
+     * Safely escapes a parameter value for inclusion in SQL.
+     */
+    public static function escapeSqlLiteral($value, ConfigHandler $config): string {
+        if ($value === null) {
+            return 'NULL';
+        }
+        if (is_int($value) || (is_string($value) && ctype_digit($value))) {
+            return (string)(int)$value;
+        }
+        if (is_float($value) || (is_string($value) && is_numeric($value) && strpos($value, '.') !== false)) {
+            return (string)(float)$value;
+        }
+
+        $str = (string)$value;
+        if (function_exists('esc_sql')) {
+            return "'" . esc_sql($str) . "'";
+        }
+        if ($mysqli = $config->get('mysqli')) {
+            if ($mysqli instanceof \mysqli) {
+                return "'" . $mysqli->real_escape_string($str) . "'";
+            }
+        }
+        return "'" . addslashes($str) . "'";
+    }
+
+    /**
+     * Resolves dynamic context tokens ({current_user_id}, {current_user_name}, {get:param})
+     * and named placeholders (:param_name) in SQL queries.
+     */
+    public static function resolveParameters(string $sql, ConfigHandler $config): string {
+        // 1. Context Token: {current_user_id}
+        $userId = 0;
+        if (function_exists('get_current_user_id')) {
+            $userId = (int)get_current_user_id();
+        }
+        $sql = str_replace('{current_user_id}', (string)$userId, $sql);
+
+        // 2. Context Token: {current_user_name}
+        $userName = '';
+        if (function_exists('wp_get_current_user')) {
+            $u = wp_get_current_user();
+            if ($u && !empty($u->user_login)) {
+                $userName = $u->user_login;
+            }
+        }
+        $sql = str_replace('{current_user_name}', self::escapeSqlLiteral($userName, $config), $sql);
+
+        // 3. Context Token: {get:param_name}
+        $sql = preg_replace_callback('/\{get:([a-zA-Z0-9_-]+)\}/', function($m) use ($config) {
+            $paramName = $m[1];
+            $val = isset($_GET[$paramName]) ? Security::unslash($_GET[$paramName]) : '';
+            return self::escapeSqlLiteral($val, $config);
+        }, $sql);
+
+        // 4. Named Placeholders :param_name
+        $params = $config->get('params');
+        $paramMap = [];
+        if (is_array($params)) {
+            $paramMap = $params;
+        } elseif (is_string($params) && !empty($params)) {
+            $trimmed = trim($params);
+            if (str_starts_with($trimmed, '{') && str_ends_with($trimmed, '}')) {
+                $decoded = json_decode($trimmed, true);
+                if (is_array($decoded)) {
+                    $paramMap = $decoded;
+                }
+            } else {
+                parse_str($trimmed, $parsed);
+                if (is_array($parsed)) {
+                    $paramMap = $parsed;
+                }
+            }
+        }
+
+        // Also merge $_GET params with lower priority (if not explicitly passed in params config)
+        foreach ($_GET as $gk => $gv) {
+            if (!isset($paramMap[$gk]) && is_scalar($gv)) {
+                $paramMap[$gk] = Security::unslash($gv);
+            }
+        }
+
+        if (!empty($paramMap)) {
+            $sql = preg_replace_callback('/:([a-zA-Z_][a-zA-Z0-9_]*)/', function($m) use ($paramMap, $config) {
+                $name = $m[1];
+                if (array_key_exists($name, $paramMap)) {
+                    return self::escapeSqlLiteral($paramMap[$name], $config);
+                }
+                return $m[0]; // Keep placeholder if not provided
+            }, $sql);
+        }
+
+        return $sql;
+    }
+
+    /**
+     * Resolves custom [QRY] markers recursively and binds dynamic parameters.
      */
     public static function resolveSQL(string $qryName, ConfigHandler $config): string {
-        $path = $config->get('queries') . $qryName . '.sql';
+        $cleanQryName = preg_replace('/\.sql$/i', '', $qryName);
+        $baseDir = rtrim($config->get('queries'), '/\\') . '/';
+        $path = $baseDir . $cleanQryName . '.sql';
+        
         if (!file_exists($path)) {
-            return '';
+            // Check in subdirectories if not found directly at root
+            $found = glob($baseDir . '*/' . $cleanQryName . '.sql');
+            if (!empty($found)) {
+                $path = $found[0];
+            } else {
+                return '';
+            }
         }
         $qry = file_get_contents($path);
+        if ($qry === false) {
+            return '';
+        }
         
         $match = preg_split("/(\[QRY\]|\[QUERY\])(.*?)(\[\/QRY\]|\[\/QUERY\])/ms", $qry, -1, PREG_SPLIT_DELIM_CAPTURE);
         if (sizeof($match) > 1) {
@@ -329,6 +436,10 @@ class FieldHandler {
             }
             $qry = $resolved;
         }
+
+        // Resolve dynamic context parameters and tokens
+        $qry = self::resolveParameters($qry, $config);
+
         return $qry;
     }
 }
@@ -1027,15 +1138,34 @@ HTML;
             $isPrimary = !empty($field['flag']['primary']);
             $isAuto = !empty($field['flag']['autoincr']);
             
+            $cellHtml = '';
             if ($editMode && !$readonly && !$valueH && ($this->config->get('primaryEdit') || (!$isPrimary && !$isAuto))) {
-                $out .= $this->renderField($field, $val, null, $row);
+                $cellHtml = $this->renderField($field, $val, null, $row);
             } elseif ($editMode && $valueH) {
                 $forcedVal = $this->config->getArray('valueH')[$field['name']];
-                $out .= "<div class='td'><input type='hidden' name='" . Security::escapeAttr($field['name']) . "' value='" . Security::escapeAttr($forcedVal) . "'>";
-                $out .= Security::escapeHtml($val) . "</div>";
+                $cellHtml = "<div class='td'><input type='hidden' name='" . Security::escapeAttr($field['name']) . "' value='" . Security::escapeAttr($forcedVal) . "'>" . Security::escapeHtml($val) . "</div>";
             } else {
-                $out .= "<div class='td'>" . Security::escapeHtml($val) . "</div>";
+                $cellHtml = "<div class='td'>" . Security::escapeHtml($val) . "</div>";
             }
+
+            // AP3: Custom Column Formatter (apply_filters for 2charta eAkte, badges, etc.)
+            if (function_exists('apply_filters')) {
+                $tbl = $field['table'] ?? '';
+                $cellHtml = apply_filters('comyli_render_cell', $cellHtml, $field['name'], $val, $row, $tbl);
+                $cellHtml = apply_filters("comyli_render_column_{$field['name']}", $cellHtml, $val, $row, $tbl);
+            }
+            if ($cb = $this->config->get('render_cell_callback')) {
+                if (is_callable($cb)) {
+                    $cellHtml = $cb($cellHtml, $field['name'], $val, $row, $field['table'] ?? '');
+                }
+            }
+
+            // Ensure cell is enclosed in <div class='td'...>
+            if (!preg_match('/^\s*<div\b[^>]*\btd\b/i', $cellHtml)) {
+                $cellHtml = "<div class='td'>" . $cellHtml . "</div>";
+            }
+
+            $out .= $cellHtml;
         }
 
         if ($editMode) {
@@ -1458,23 +1588,30 @@ class App {
 
     private function getRequestedTable(): string {
         $raw = isset($_GET[Security::base64urlEncode('table')]) ? Security::unslash($_GET[Security::base64urlEncode('table')]) : '';
+        if ($raw === '') {
+            $raw = (string)($this->config->get('table', '') ?: $this->config->get('stdTbl', ''));
+        }
         if ($raw === '') return '';
         $decoded = Security::base64urlDecode($raw);
         $tables = $this->config->getArray('tables');
         if (in_array($decoded, $tables)) return $decoded;
         if (in_array($raw, $tables)) return $raw;
-        return $decoded;
+        return $raw ?: $decoded;
     }
 
     private function getRequestedQuery(): string {
         $raw = isset($_GET[Security::base64urlEncode('qry')]) ? Security::unslash($_GET[Security::base64urlEncode('qry')]) : '';
+        if ($raw === '') {
+            $raw = (string)($this->config->get('query', '') ?: $this->config->get('qry', ''));
+        }
         if ($raw === '') return '';
         $decoded = Security::base64urlDecode($raw);
-        $files = glob($this->config->get('queries') . '*.sql') ?: [];
+        $baseDir = rtrim($this->config->get('queries'), '/\\') . '/';
+        $files = glob($baseDir . '*.sql') ?: [];
         $queries = array_map(function($f) { return basename($f, '.sql'); }, $files);
         if (in_array($decoded, $queries)) return $decoded;
         if (in_array($raw, $queries)) return $raw;
-        return $decoded;
+        return $raw ?: $decoded;
     }
 
     private function handleSyncState(string $table, array $fields, array $dbRows, int $totalRows, int $page, int $limit): void {
@@ -1568,9 +1705,14 @@ class App {
             echo "<script src='" . Security::escapeAttr($prismsql) . "'></script>";
         }
 
-        echo "<div class='comyli comyli-layout'>";
+        $isClean = ($this->config->get('layout') === 'clean');
+        $layoutClass = 'comyli comyli-layout';
+        if ($isClean) {
+            $layoutClass .= ' comyli-clean-layout comyli-embedded-grid';
+        }
+        echo "<div class='$layoutClass'>";
         
-        $hasSidebar = $this->config->get('listQueries') || $this->config->get('listTables');
+        $hasSidebar = !$isClean && ($this->config->get('listQueries') || $this->config->get('listTables'));
         if ($hasSidebar) {
             echo "<div class='comyli-sidebar'>";
             

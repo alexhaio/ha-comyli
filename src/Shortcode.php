@@ -22,6 +22,13 @@ class Shortcode {
     public function register(): void {
         add_action('template_redirect', [$this, 'initShortcodes']);
         add_filter('widget_text', 'do_shortcode');
+
+        // Register shortcode early for block editor and programmatic rendering
+        add_shortcode('comyli', [$this, 'renderShortcode']);
+        add_shortcode('comyli_table', [$this, 'renderShortcode']);
+        if ($this->pluginConfig->plugin['name'] !== 'comyli') {
+            add_shortcode($this->pluginConfig->plugin['name'], [$this, 'renderShortcode']);
+        }
     }
 
     /**
@@ -29,7 +36,6 @@ class Shortcode {
      */
     public function initShortcodes(): void {
         if (!is_admin()) {
-            add_shortcode($this->pluginConfig->plugin['name'], [$this, 'renderShortcode']);
             add_filter('the_content', [$this, 'filterTheContent']);
 
             // Intercept CSV export or Image requests before headers are sent
@@ -57,57 +63,112 @@ class Shortcode {
     /**
      * @param array<string, mixed> $atts
      */
-        public function renderShortcode(array $atts): string {
+    public function renderShortcode(array $atts): string {
         if (!defined('DONOTCACHEPAGE')) {
             define('DONOTCACHEPAGE', true);
         }
+
         $id = isset($atts['id']) ? (int)$atts['id'] : 0;
-        $post = get_post($id);
+        $postConfig = [];
         
-        if (!$post) {
-            return 'Table not found.';
-        }
-        
-        $unserialized = maybe_unserialize($post->post_content);
-        $postConfig = is_array($unserialized) ? $unserialized : [];
-        
-        $meta = get_post_meta($post->ID);
-        foreach ($meta as $k => $v) {
-            if (str_starts_with($k, '_comyli_')) {
-                $postConfig[substr($k, 8)] = maybe_unserialize($v[0]);
+        if ($id > 0) {
+            $post = get_post($id);
+            if ($post) {
+                $unserialized = maybe_unserialize($post->post_content);
+                $postConfig = is_array($unserialized) ? $unserialized : [];
+                
+                $meta = get_post_meta($post->ID);
+                foreach ($meta as $k => $v) {
+                    if (str_starts_with($k, '_comyli_')) {
+                        $postConfig[substr($k, 8)] = maybe_unserialize($v[0]);
+                    }
+                }
             }
         }
-        
+
+        // If neither valid post ID nor table/query attribute is supplied
+        if (!$id && empty($atts['table']) && empty($atts['tables']) && empty($atts['query']) && empty($atts['qry'])) {
+            return '<p class="comyli-notice">Keine Tabelle oder Abfrage angegeben.</p>';
+        }
+
         $config = array_merge($this->pluginConfig->plugin, $postConfig, $atts);
-        $config['comyli_id'] = $id; // Pass ID for the frontend form to include as hidden input
-        
+        $config['comyli_id'] = $id;
+
+        return self::renderDirect($config, $this->pluginConfig);
+    }
+
+    /**
+     * Direct programmatic rendering of a CoMyLi table or query without post dependency.
+     *
+     * @param array<string, mixed> $args
+     * @param Config|null $pluginConfig
+     * @return string
+     */
+    public static function renderDirect(array $args, ?Config $pluginConfig = null): string {
+        $pluginPath = $pluginConfig ? $pluginConfig->plugin['path'] : dirname(__DIR__);
+        $pluginUrl = $pluginConfig ? $pluginConfig->plugin['url'] : plugin_dir_url(dirname(__DIR__) . '/ha-comyli.php');
+
+        $defaults = [
+            'table'     => '',
+            'query'     => '',
+            'params'    => [],
+            'layout'    => 'clean',
+            'limit'     => 25,
+            'edit'      => false,
+            'filter'    => true,
+            'csvExport' => false,
+            'use_wp_db' => true,
+            'queries'   => $pluginPath . '/queries/',
+        ];
+
+        $config = array_merge($defaults, $args);
+
+        // Map alias keys
+        if (!empty($config['query']) && empty($config['qry'])) {
+            $config['qry'] = $config['query'];
+        }
+        if (!empty($config['table']) && empty($config['tables'])) {
+            $config['tables'] = $config['table'];
+        }
+
+        // Check Permissions (AP6)
+        $queryToCheck = $config['query'] ?? ($config['qry'] ?? '');
+        if (!empty($queryToCheck) && class_exists(Permissions::class) && !Permissions::can_view_query($queryToCheck)) {
+            return '<div class="comyli-error">Keine Berechtigung zum Anzeigen dieser Abfrage.</div>';
+        }
+
+        $tableToCheck = $config['table'] ?? '';
+        if (!empty($tableToCheck) && class_exists(Permissions::class) && !Permissions::can_view_table($tableToCheck)) {
+            return '<div class="comyli-error">Keine Berechtigung zum Anzeigen dieser Tabelle.</div>';
+        }
+
+        if (!empty($config['edit']) && !empty($tableToCheck) && class_exists(Permissions::class) && !Permissions::can_edit_table($tableToCheck)) {
+            // Degrade to read-only if no edit capability
+            $config['edit'] = false;
+        }
+
         $config['path'] = [];
         $tablesStr = isset($config['tables']) ? (string)$config['tables'] : '';
-        $config['tables'] = explode(',', $tablesStr);
-        $config['stdTbl'] = $config['tables'][0] ?? '';
-        $config['path']['lightboxCSS']   = "";
-        $config['path']['lightboxJS']    = "";
-        $config['path']['codejar'] = $this->pluginConfig->plugin['url'] . "sql-admin/assets/codejar.js";
-        $config['path']['prismjs'] = $this->pluginConfig->plugin['url'] . "sql-admin/assets/prism.min.js";
-        $config['path']['prismcss'] = $this->pluginConfig->plugin['url'] . "sql-admin/assets/prism.min.css";
-        $config['path']['prismsql'] = $this->pluginConfig->plugin['url'] . "sql-admin/assets/prism-sql.min.js";
-        $config['path']['jquery']		 = "";
-        
-        $config['stdTbl'] = $config['tables'][0] ?? ''; // Standard-Tabelle
-        $config['prevent_auto_run'] = true; // Tell standalone script not to execute automatically
-        
-        // Pass WordPress specific Environment Callbacks
-        
+        $config['tables'] = array_filter(array_map('trim', explode(',', $tablesStr)));
+        $config['stdTbl'] = $config['tables'][0] ?? ($config['table'] ?? '');
+        $config['path']['lightboxCSS'] = "";
+        $config['path']['lightboxJS']  = "";
+        $config['path']['codejar']     = $pluginUrl . "sql-admin/assets/codejar.js";
+        $config['path']['prismjs']     = $pluginUrl . "sql-admin/assets/prism.min.js";
+        $config['path']['prismcss']    = $pluginUrl . "sql-admin/assets/prism.min.css";
+        $config['path']['prismsql']    = $pluginUrl . "sql-admin/assets/prism-sql.min.js";
+        $config['path']['jquery']      = "";
+
+        $config['prevent_auto_run'] = true;
         $config['unslash'] = function($value) {
-            return \wp_unslash($value);
+            return function_exists('wp_unslash') ? \wp_unslash($value) : stripslashes_deep($value);
         };
-        
-        if (!empty($config['use_wp_db'])) {
+
+        if (!empty($config['use_wp_db']) || empty($config['dbserver'])) {
             global $wpdb;
-            if ($wpdb->dbh instanceof \mysqli) {
+            if (isset($wpdb) && $wpdb->dbh instanceof \mysqli) {
                 $config['mysqli'] = $wpdb->dbh;
-            } else {
-                // Fallback
+            } elseif (defined('DB_HOST') && defined('DB_USER') && defined('DB_PASSWORD') && defined('DB_NAME')) {
                 $config['mysqli'] = new \mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
                 $config['mysqli']->query("SET character_set_results = 'utf8', character_set_client = 'utf8', character_set_connection = 'utf8', character_set_database = 'utf8', character_set_server = 'utf8'");
             }
@@ -132,25 +193,28 @@ class Shortcode {
 
         ob_start();
 
-        $restUrl = esc_url_raw(rest_url('comyli/v1/'));
-                echo "<script>window.COMYLI_ENV = { restUrl: '" . esc_js($restUrl) . "', nonce: '" . wp_create_nonce('wp_rest') . "', postId: " . (int)$id . ", atts: " . json_encode($atts) . " };</script>";
+        $restUrl = function_exists('rest_url') ? esc_url_raw(rest_url('comyli/v1/')) : '';
+        $nonce = function_exists('wp_create_nonce') ? wp_create_nonce('wp_rest') : '';
+        $postId = (int)($config['comyli_id'] ?? 0);
+        echo "<script>window.COMYLI_ENV = { restUrl: '" . esc_js($restUrl) . "', nonce: '" . esc_js($nonce) . "', postId: " . $postId . ", atts: " . json_encode($args) . " };</script>";
         echo "<style>body{ overflow: scroll; }</style>";
 
         $config['is_wp'] = true;
 
-        // Apply WordPress hooks for configuration
-        $config = apply_filters('comyli_config', $config, $config['stdTbl']);
-        $config = apply_filters('comyli_config_' . $config['stdTbl'], $config);
+        if (function_exists('apply_filters')) {
+            $config = apply_filters('comyli_config', $config, $config['stdTbl']);
+            if (!empty($config['stdTbl'])) {
+                $config = apply_filters('comyli_config_' . $config['stdTbl'], $config);
+            }
+        }
 
-        // Include sql-admin core (only classes)
-        require_once($this->pluginConfig->plugin['path'] . '/sql-admin/index.php');
-        
-        // Execute the app explicitly
+        require_once($pluginPath . '/sql-admin/index.php');
+
         if (class_exists('\\Comyli\\Standalone\\App')) {
             $app = new \Comyli\Standalone\App($config);
             $app->run();
         }
-        
+
         return ob_get_clean() ?: '';
     }
 }

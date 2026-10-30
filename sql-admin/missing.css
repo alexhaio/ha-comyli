@@ -1,4 +1,4 @@
-﻿/* Zebra Striping & Hover */
+/* Zebra Striping & Hover */
 .comyli .tr:nth-child(even) { background-color: #f8fafc; }
 .comyli .tr:hover { background-color: #f1f5f9; }
 
