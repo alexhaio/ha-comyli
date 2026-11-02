@@ -25,7 +25,18 @@ class Permissions {
             return true;
         }
 
-        $requiredCap = apply_filters("comyli_cap_query_{$queryName}", 'read');
+        $cleanName = preg_replace('/\.sql$/i', '', trim($queryName));
+
+        // 1. Check if dynamically configured in QueryManager (comyli_query post type)
+        if (class_exists(__NAMESPACE__ . '\\QueryManager')) {
+            $requiredCap = QueryManager::get_query_capability($cleanName);
+            if (!empty($requiredCap)) {
+                return current_user_can($requiredCap);
+            }
+        }
+
+        // 2. Filter fallback
+        $requiredCap = apply_filters("comyli_cap_query_{$cleanName}", 'read');
         return current_user_can($requiredCap);
     }
 

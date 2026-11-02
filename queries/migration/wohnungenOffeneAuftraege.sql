@@ -1,0 +1,1 @@
+SELECT * FROM `arbeitsauftrag` WHERE arbeitsauftrag.materialwert = 0 AND arbeitsauftrag.anzahlStunden = 0

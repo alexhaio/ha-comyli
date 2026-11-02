@@ -125,3 +125,175 @@
     border-radius: 8px;
     color: #64748b;
 }
+
+
+/* Query List Block (ha-comyli/query-list) */
+.comyli-query-list-wrap {
+    margin: 1.5rem 0;
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+.comyli-query-list-header {
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.comyli-query-list-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.comyli-count-badge {
+    background: #0284c7;
+    color: #ffffff;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 9999px;
+}
+
+.comyli-query-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+}
+
+.comyli-query-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.comyli-query-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1.2rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: all 0.2s ease;
+}
+
+.comyli-query-card:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 4px 10px rgba(59, 130, 246, 0.1);
+    transform: translateY(-2px);
+}
+
+.comyli-query-card.is-active {
+    border-color: #2563eb;
+    background: #eff6ff;
+}
+
+.comyli-query-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.comyli-query-card-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #0f172a;
+    margin: 0;
+    line-height: 1.35;
+}
+
+.comyli-category-pill {
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.comyli-query-card-desc {
+    font-size: 0.875rem;
+    color: #64748b;
+    line-height: 1.4;
+    margin: 0 0 1rem 0;
+    flex-grow: 1;
+}
+
+.comyli-query-card-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: auto;
+    padding-top: 0.75rem;
+    border-top: 1px solid #f1f5f9;
+}
+
+.comyli-btn-run {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: #2563eb;
+    color: #ffffff !important;
+    text-decoration: none !important;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    padding: 0.4rem 0.85rem;
+    border-radius: 6px;
+    transition: background 0.15s ease;
+}
+
+.comyli-btn-run:hover {
+    background: #1d4ed8;
+}
+
+.comyli-cap-tag {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    font-family: monospace;
+}
+
+.comyli-active-query-output {
+    margin-top: 2rem;
+    padding: 1.5rem;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+}
+
+.comyli-active-query-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.comyli-active-query-head h4 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: #1e293b;
+}
+
+.comyli-btn-close {
+    color: #ef4444;
+    text-decoration: none;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.comyli-btn-close:hover {
+    text-decoration: underline;
+}

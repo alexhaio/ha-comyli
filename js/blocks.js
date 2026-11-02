@@ -15,7 +15,12 @@
     const blockData = window.comyliBlockData || { queries: [], tables: [] };
 
     const queryOptions = [{ label: '— Keine Abfrage —', value: '' }].concat(
-        (blockData.queries || []).map(q => ({ label: q, value: q }))
+        (blockData.queries || []).map(q => {
+            if (typeof q === 'object' && q !== null) {
+                return { label: q.label || q.value, value: q.value };
+            }
+            return { label: q, value: q };
+        })
     );
 
     const tableOptions = [{ label: '— Keine Tabelle —', value: '' }].concat(
@@ -54,7 +59,7 @@
                         PanelBody,
                         { title: 'Datenquelle', initialOpen: true },
                         el(SelectControl, {
-                            label: 'Abfrage (.sql Datei)',
+                            label: 'Abfrage (SQL)',
                             value: attributes.query,
                             options: queryOptions,
                             onChange: val => setAttributes({ query: val, table: val ? '' : attributes.table }),
@@ -305,7 +310,7 @@
                         PanelBody,
                         { title: 'Datenquelle', initialOpen: false },
                         el(SelectControl, {
-                            label: 'Abfrage (.sql Datei)',
+                            label: 'Abfrage (SQL)',
                             value: attributes.query,
                             options: queryOptions,
                             onChange: val => setAttributes({ query: val, table: val ? '' : attributes.table }),
@@ -329,6 +334,84 @@
                           { className: 'comyli-block-placeholder' },
                           el('strong', null, '🎯 CoMyLi KPI Kachel'),
                           el('p', null, 'Bitte wähle eine Abfrage oder Tabelle für die Kennzahl aus.')
+                       )
+            );
+        },
+        save: function () {
+            return null;
+        },
+    });
+
+    // =========================================================================
+    // 4. Block: ha-comyli/query-list
+    // =========================================================================
+    registerBlockType('ha-comyli/query-list', {
+        title: 'CoMyLi Abfrage-Liste',
+        description: 'Zeigt eine filterbare Übersicht aller Abfragen an, für die der angemeldete Nutzer Berechtigung hat.',
+        icon: 'list-view',
+        category: 'widgets',
+        attributes: {
+            title: { type: 'string', default: 'Verfügbare Auswertungen & Berichte' },
+            category: { type: 'string', default: '' },
+            layout: { type: 'string', default: 'grid' },
+            showCount: { type: 'boolean', default: true },
+            showDesc: { type: 'boolean', default: true },
+        },
+        edit: function (props) {
+            const { attributes, setAttributes } = props;
+
+            return el(
+                Fragment,
+                null,
+                el(
+                    InspectorControls,
+                    null,
+                    el(
+                        PanelBody,
+                        { title: 'Listen-Einstellungen', initialOpen: true },
+                        el(TextControl, {
+                            label: 'Überschrift',
+                            value: attributes.title,
+                            onChange: val => setAttributes({ title: val }),
+                        }),
+                        el(TextControl, {
+                            label: 'Kategorie-Filter (optional)',
+                            value: attributes.category,
+                            placeholder: 'z. B. Migration, Statistik',
+                            onChange: val => setAttributes({ category: val }),
+                            help: 'Leer lassen, um alle freigegebenen Abfragen anzuzeigen.',
+                        }),
+                        el(SelectControl, {
+                            label: 'Darstellung / Layout',
+                            value: attributes.layout,
+                            options: [
+                                { label: 'Kachel-Raster (Grid)', value: 'grid' },
+                                { label: 'Kompakte Liste (List)', value: 'list' },
+                            ],
+                            onChange: val => setAttributes({ layout: val }),
+                        }),
+                        el(ToggleControl, {
+                            label: 'Anzahl-Badge anzeigen',
+                            checked: attributes.showCount,
+                            onChange: val => setAttributes({ showCount: val }),
+                        }),
+                        el(ToggleControl, {
+                            label: 'Beschreibungen anzeigen',
+                            checked: attributes.showDesc,
+                            onChange: val => setAttributes({ showDesc: val }),
+                        })
+                    )
+                ),
+                ServerSideRender
+                    ? el(ServerSideRender, {
+                          block: 'ha-comyli/query-list',
+                          attributes: attributes,
+                      })
+                    : el(
+                          'div',
+                          { className: 'comyli-block-placeholder' },
+                          el('strong', null, '📋 CoMyLi Abfrage-Liste'),
+                          el('p', null, 'Zeigt dynamisch alle Abfragen basierend auf den Rechten des aktuellen Nutzers.')
                       )
             );
         },

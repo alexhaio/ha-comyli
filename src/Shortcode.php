@@ -26,6 +26,8 @@ class Shortcode {
         // Register shortcode early for block editor and programmatic rendering
         add_shortcode('comyli', [$this, 'renderShortcode']);
         add_shortcode('comyli_table', [$this, 'renderShortcode']);
+        add_shortcode('comyli_query_list', [$this, 'renderQueryListShortcode']);
+        add_shortcode('comyli_queries', [$this, 'renderQueryListShortcode']);
         if ($this->pluginConfig->plugin['name'] !== 'comyli') {
             add_shortcode($this->pluginConfig->plugin['name'], [$this, 'renderShortcode']);
         }
@@ -104,6 +106,17 @@ class Shortcode {
      * @param Config|null $pluginConfig
      * @return string
      */
+    /**
+     * Renders a list of queries accessible to the user based on capability.
+     *
+     * @param array<string, mixed>|string $atts
+     * @return string
+     */
+    public function renderQueryListShortcode($atts): string {
+        $atts = is_array($atts) ? $atts : [];
+        return Blocks::renderQueryListDirect($atts, $this->pluginConfig);
+    }
+
     public static function renderDirect(array $args, ?Config $pluginConfig = null): string {
         $pluginPath = $pluginConfig ? $pluginConfig->plugin['path'] : dirname(__DIR__);
         $pluginUrl = $pluginConfig ? $pluginConfig->plugin['url'] : plugin_dir_url(dirname(__DIR__) . '/ha-comyli.php');

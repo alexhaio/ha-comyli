@@ -408,21 +408,36 @@ class FieldHandler {
      */
     public static function resolveSQL(string $qryName, ConfigHandler $config): string {
         $cleanQryName = preg_replace('/\.sql$/i', '', $qryName);
-        $baseDir = rtrim($config->get('queries'), '/\\') . '/';
-        $path = $baseDir . $cleanQryName . '.sql';
-        
-        if (!file_exists($path)) {
-            // Check in subdirectories if not found directly at root
-            $found = glob($baseDir . '*/' . $cleanQryName . '.sql');
-            if (!empty($found)) {
-                $path = $found[0];
-            } else {
-                return '';
+
+        // Capability check via Permissions
+        if (class_exists('\\ha\\CoMyLi\\Permissions') && !\ha\CoMyLi\Permissions::can_view_query($cleanQryName)) {
+            return '';
+        }
+
+        $qry = '';
+        if (class_exists('\\ha\\CoMyLi\\QueryManager')) {
+            $dbSql = \ha\CoMyLi\QueryManager::get_query_sql($cleanQryName);
+            if (!empty($dbSql)) {
+                $qry = $dbSql;
             }
         }
-        $qry = file_get_contents($path);
-        if ($qry === false) {
-            return '';
+
+        if (empty($qry)) {
+            $baseDir = rtrim($config->get('queries'), '/\\') . '/';
+            $path = $baseDir . $cleanQryName . '.sql';
+            if (!file_exists($path)) {
+                // Check in subdirectories if not found directly at root
+                $found = glob($baseDir . '*/' . $cleanQryName . '.sql');
+                if (!empty($found)) {
+                    $path = $found[0];
+                } else {
+                    return '';
+                }
+            }
+            $qry = file_get_contents($path);
+            if ($qry === false) {
+                return '';
+            }
         }
         
         $match = preg_split("/(\[QRY\]|\[QUERY\])(.*?)(\[\/QRY\]|\[\/QUERY\])/ms", $qry, -1, PREG_SPLIT_DELIM_CAPTURE);

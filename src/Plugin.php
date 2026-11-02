@@ -18,6 +18,7 @@ class Plugin {
     private PostType $postType;
     private RestApi $restApi;
     private Blocks $blocks;
+    private QueryManager $queryManager;
 
     /**
      * Initializes the plugin components.
@@ -35,6 +36,7 @@ class Plugin {
         $this->postType = new PostType($this->config);
         $this->restApi = new RestApi($this->config);
         $this->blocks = new Blocks($this->config);
+        $this->queryManager = new QueryManager($this->config);
     }
 
     /**
@@ -47,8 +49,8 @@ class Plugin {
         $this->ajax->register();
         $this->legacySpecifics->register();
         $this->postType->register();
+        $this->queryManager->register();
         $this->restApi->register();
         $this->blocks->register();
     }
 }
-
