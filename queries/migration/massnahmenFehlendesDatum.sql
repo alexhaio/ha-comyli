@@ -1,1 +1,0 @@
-SELECT * FROM `personen_massnahmenmanagement` WHERE `datumBis` = '0000-00-00' OR 'datumVon' = '0000-00-00'

@@ -1,1 +1,0 @@
-SELECT COUNT(`AZLand`) AS ANzahl, `lastChangedUser` FROM personen_kontaktmanagement GROUP BY `lastChangedUser`

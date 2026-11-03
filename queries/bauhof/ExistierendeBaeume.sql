@@ -1,1 +1,0 @@
-SELECT * FROM arbokat WHERE gefaellt IS NULL

@@ -1,1 +1,0 @@
-SELECT * FROM `personen-sprachkurse` WHERE `PkzBAMF` <> '' AND `PkzWiederholer` <> ''

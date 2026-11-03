@@ -1,4 +1,4 @@
-﻿# Operating System
+# Operating System
 .DS_Store
 Thumbs.db
 ehthumbs.db
@@ -11,3 +11,9 @@ ehthumbs.db
 *.log
 *.tmp
 *.bak
+
+# Queries (Fachbereichs-Abfragen gehören nicht ins Core-Repository)
+queries/**/*.sql
+queries/*.sql
+!queries/.gitkeep
+
