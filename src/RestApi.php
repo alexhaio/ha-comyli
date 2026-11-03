@@ -90,29 +90,14 @@ class RestApi {
             }
         }
         
-$config = array_merge($this->pluginConfig->plugin, $postConfig);
+        $config = array_merge($this->pluginConfig->plugin, $postConfig);
         $config['comyli_id'] = $postId;
-                $config['is_wp'] = true;
-        
-        
-        if (!empty($config['use_wp_db'])) {
-            global $wpdb;
-            if ($wpdb->dbh instanceof \mysqli) {
-                $config['mysqli'] = $wpdb->dbh;
-            } else {
-                $config['mysqli'] = new \mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
-                $config['mysqli']->query("SET character_set_results = 'utf8', character_set_client = 'utf8', character_set_connection = 'utf8', character_set_database = 'utf8', character_set_server = 'utf8'");
-            }
-        } else {
-            $dbserver = $config['dbserver'] ?? '';
-            $dbuser = $config['dbuser'] ?? '';
-            $dbpass = $config['dbpass'] ?? '';
-            $db = $config['db'] ?? '';
-            
-            if (!empty($dbserver)) {
-                $config['mysqli'] = new \mysqli($dbserver, $dbuser, $dbpass, $db);
-                $config['mysqli']->query("SET character_set_results = 'utf8', character_set_client = 'utf8', character_set_connection = 'utf8', character_set_database = 'utf8', character_set_server = 'utf8'");
-            }
+        $config['is_wp'] = true;
+
+        try {
+            $config['mysqli'] = ConnectionManager::get_connection_for_config($config);
+        } catch (\Exception $e) {
+            return [];
         }
 
         $tablesStr = isset($config['tables']) ? (string)$config['tables'] : '';
@@ -235,13 +220,10 @@ $config = array_merge($this->pluginConfig->plugin, $postConfig);
         $config['queries'] = $this->pluginConfig->plugin['path'] . '/queries/';
         $config['params'] = $request->get_params();
 
-        global $wpdb;
-        $mysqli = null;
-        if (isset($wpdb) && $wpdb->dbh instanceof \mysqli) {
-            $mysqli = $wpdb->dbh;
-        } elseif (defined('DB_HOST') && defined('DB_USER') && defined('DB_PASSWORD') && defined('DB_NAME')) {
-            $mysqli = new \mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
-            $mysqli->query("SET character_set_results = 'utf8', character_set_client = 'utf8', character_set_connection = 'utf8', character_set_database = 'utf8', character_set_server = 'utf8'");
+        try {
+            $mysqli = ConnectionManager::get_connection_for_query($name);
+        } catch (\Exception $e) {
+            return new \WP_REST_Response(['error' => 'Datenbankfehler: ' . $e->getMessage()], 500);
         }
         $config['mysqli'] = $mysqli;
 

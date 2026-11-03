@@ -161,7 +161,7 @@ class Blocks {
         ksort($queryList);
         $queries = array_values($queryList);
 
-        // Discover database tables
+        // 3. Discover database tables (WordPress DB + external tables from CoMyLi post types)
         global $wpdb;
         $tables = [];
         if ($wpdb) {
@@ -170,6 +170,23 @@ class Blocks {
                 $tables = $rawTables;
             }
         }
+
+        // Also add tables configured in CoMyLi posts (including external DB tables)
+        if (class_exists(ConnectionManager::class)) {
+            $tableOptions = ConnectionManager::get_all_tables_options();
+            foreach ($tableOptions as $to) {
+                if (!empty($to['tables'])) {
+                    $split = array_filter(array_map('trim', explode(',', $to['tables'])));
+                    foreach ($split as $tbl) {
+                        if (!in_array($tbl, $tables, true)) {
+                            $tables[] = $tbl;
+                        }
+                    }
+                }
+            }
+        }
+
+        sort($tables, SORT_NATURAL | SORT_FLAG_CASE);
 
         wp_localize_script('ha-comyli-blocks-js', 'comyliBlockData', [
             'queries' => $queries,
@@ -230,11 +247,6 @@ class Blocks {
             return '<div class="comyli-error">Keine Berechtigung zum Anzeigen dieses Diagramms.</div>';
         }
 
-        global $wpdb;
-        if (!$wpdb) {
-            return '';
-        }
-
         require_once $this->config->plugin['path'] . '/sql-admin/index.php';
 
         $sql = '';
@@ -252,7 +264,24 @@ class Blocks {
             return '<div class="comyli-error">Abfrage konnte nicht geladen werden.</div>';
         }
 
-        $rows = $wpdb->get_results($sql, ARRAY_A);
+        try {
+            $conn = !empty($query) 
+                ? ConnectionManager::get_connection_for_query($query) 
+                : ConnectionManager::get_connection_for_table($table);
+        } catch (\Exception $e) {
+            return '<div class="comyli-error">Datenbankfehler: ' . esc_html($e->getMessage()) . '</div>';
+        }
+
+        $res = @$conn->query($sql);
+        if (!$res || !($res instanceof \mysqli_result)) {
+            return '<div class="comyli-error">Abfragefehler: ' . esc_html($conn->error ?: 'Keine Daten gefunden') . '</div>';
+        }
+
+        $rows = [];
+        while ($r = $res->fetch_assoc()) {
+            $rows[] = $r;
+        }
+
         if (empty($rows)) {
             return '<div class="comyli-notice">Keine Daten für Diagramm gefunden.</div>';
         }
@@ -299,13 +328,14 @@ class Blocks {
             </div>
             <script>
             (function() {
-                function init() {
-                    var el = document.getElementById('<?php echo esc_js($chartId); ?>');
-                    if (!el || typeof Chart === 'undefined') {
-                        setTimeout(init, 150);
+                function initChart() {
+                    if (typeof Chart === 'undefined') {
+                        setTimeout(initChart, 50);
                         return;
                     }
-                    new Chart(el, {
+                    var ctx = document.getElementById('<?php echo esc_js($chartId); ?>');
+                    if (!ctx) return;
+                    new Chart(ctx, {
                         type: '<?php echo esc_js($chartType); ?>',
                         data: {
                             labels: <?php echo $jsonLabels; ?>,
@@ -313,8 +343,7 @@ class Blocks {
                                 label: '<?php echo esc_js($valCol); ?>',
                                 data: <?php echo $jsonData; ?>,
                                 backgroundColor: <?php echo $colors; ?>,
-                                borderColor: '<?php echo $chartType === 'line' ? '#3b82f6' : 'transparent'; ?>',
-                                tension: 0.2
+                                borderWidth: 1
                             }]
                         },
                         options: {
@@ -322,17 +351,16 @@ class Blocks {
                             maintainAspectRatio: false,
                             plugins: {
                                 legend: {
-                                    display: <?php echo in_array($chartType, ['pie', 'doughnut']) ? 'true' : 'false'; ?>,
-                                    position: 'bottom'
+                                    display: '<?php echo in_array($chartType, ['pie', 'doughnut']) ? 'true' : 'false'; ?>' === 'true'
                                 }
                             }
                         }
                     });
                 }
                 if (document.readyState === 'loading') {
-                    document.addEventListener('DOMContentLoaded', init);
+                    document.addEventListener('DOMContentLoaded', initChart);
                 } else {
-                    init();
+                    initChart();
                 }
             })();
             </script>
@@ -355,8 +383,8 @@ class Blocks {
             return '';
         }
 
-        global $wpdb;
         $val = 0;
+        $sql = '';
 
         if (!empty($query)) {
             require_once $this->config->plugin['path'] . '/sql-admin/index.php';
@@ -364,12 +392,26 @@ class Blocks {
             $cfg['queries'] = $this->config->plugin['path'] . '/queries/';
             $configHandler = new \Comyli\Standalone\ConfigHandler($cfg);
             $sql = \Comyli\Standalone\FieldHandler::resolveSQL($query, $configHandler);
-            if (!empty($sql) && $wpdb) {
-                $val = $wpdb->get_var($sql);
-            }
-        } elseif (!empty($table) && $wpdb) {
+        } elseif (!empty($table)) {
             $safeTable = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
-            $val = $wpdb->get_var("SELECT COUNT(*) FROM `{$safeTable}`");
+            $sql = "SELECT COUNT(*) FROM `{$safeTable}`";
+        }
+
+        if (!empty($sql)) {
+            try {
+                $conn = !empty($query) 
+                    ? ConnectionManager::get_connection_for_query($query) 
+                    : ConnectionManager::get_connection_for_table($table);
+                
+                $res = @$conn->query($sql);
+                if ($res && ($res instanceof \mysqli_result)) {
+                    $row = $res->fetch_row();
+                    $val = $row[0] ?? 0;
+                }
+            } catch (\Exception $e) {
+                // Connection or query error
+                $val = 0;
+            }
         }
 
         $formattedVal = is_numeric($val) ? number_format_i18n((float)$val) : esc_html((string)$val);

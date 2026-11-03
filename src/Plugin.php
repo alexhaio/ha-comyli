@@ -19,6 +19,7 @@ class Plugin {
     private RestApi $restApi;
     private Blocks $blocks;
     private QueryManager $queryManager;
+    private QueryScheduler $queryScheduler;
 
     /**
      * Initializes the plugin components.
@@ -37,6 +38,7 @@ class Plugin {
         $this->restApi = new RestApi($this->config);
         $this->blocks = new Blocks($this->config);
         $this->queryManager = new QueryManager($this->config);
+        $this->queryScheduler = new QueryScheduler($this->config);
     }
 
     /**
@@ -50,6 +52,7 @@ class Plugin {
         $this->legacySpecifics->register();
         $this->postType->register();
         $this->queryManager->register();
+        $this->queryScheduler->register();
         $this->restApi->register();
         $this->blocks->register();
     }

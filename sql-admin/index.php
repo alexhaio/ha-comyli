@@ -1746,28 +1746,65 @@ class App {
                 echo "</div></div>";
             }
 
-            if ($this->config->get('listQueries') && !empty($this->config->get('queries')) && is_dir($this->config->get('queries'))) {
-                echo "<div class='comyli-sidebar-section'>";
-                echo "<h4 class='comyli-sidebar-title'>Abfragen</h4>";
-                echo "<div class='comyli-nav-list'>";
-                $files = glob($this->config->get('queries') . '*.sql');
+            if ($this->config->get('listQueries')) {
+                $queriesDir = $this->config->get('queries');
+                $files = (!empty($queriesDir) && is_dir($queriesDir)) ? glob(rtrim($queriesDir, '/\\') . '/*.sql') : [];
                 $activeQry = $this->getRequestedQuery();
                 $allQueries = [];
-                if ($files) {
-                    foreach ($files as $f) {
-                        $base = basename($f, '.sql');
-                        $url = "?" . Security::base64urlEncode('qry') . "=" . Security::base64urlEncode($base);
-                        $active = ($activeQry === $base) ? 'active' : '';
-                        
-                        echo "<div class='comyli-nav-item $active'>";
-                        echo "<a href='$url' class='comyli-nav-link'>" . Security::escapeHtml($base) . "</a>";
-                        
-                        if ($this->config->get('edit') && $this->config->get('editQueriesFrontend')) {
-                            $code = file_get_contents($f);
-                            $allQueries[$base] = $code;
-                            echo "<button type='button' class='comyli-edit-qry-btn' data-qry='" . Security::escapeAttr($base) . "' title='Bearbeiten'>&#9998;</button>";
+
+                $cptQueries = [];
+                if (class_exists('\\ha\\CoMyLi\\QueryManager')) {
+                    $tableId = (int)$this->config->get('comyli_id');
+                    $args = [
+                        'post_type'      => \ha\CoMyLi\QueryManager::POST_TYPE,
+                        'posts_per_page' => -1,
+                        'post_status'    => 'publish',
+                    ];
+                    if ($tableId > 0) {
+                        $args['meta_key'] = \ha\CoMyLi\QueryManager::META_TABLE_ID;
+                        $args['meta_value'] = $tableId;
+                    }
+                    $cptQueries = get_posts($args);
+                }
+
+                if (!empty($files) || !empty($cptQueries)) {
+                    echo "<div class='comyli-sidebar-section'>";
+                    echo "<h4 class='comyli-sidebar-title'>Abfragen</h4>";
+                    echo "<div class='comyli-nav-list'>";
+
+                    if (!empty($cptQueries)) {
+                        foreach ($cptQueries as $cq) {
+                            $slug = $cq->post_name ?: sanitize_title($cq->post_title);
+                            if (class_exists('\\ha\\CoMyLi\\Permissions') && !\ha\CoMyLi\Permissions::can_view_query($slug)) {
+                                continue;
+                            }
+                            $url = "?" . Security::base64urlEncode('qry') . "=" . Security::base64urlEncode($slug);
+                            $active = ($activeQry === $slug) ? 'active' : '';
+                            echo "<div class='comyli-nav-item $active'>";
+                            echo "<a href='$url' class='comyli-nav-link'>⚡ " . Security::escapeHtml($cq->post_title) . "</a>";
+                            echo "</div>";
                         }
-                        echo "</div>";
+                    }
+
+                    if (!empty($files)) {
+                        foreach ($files as $f) {
+                            $base = basename($f, '.sql');
+                            if (class_exists('\\ha\\CoMyLi\\Permissions') && !\ha\CoMyLi\Permissions::can_view_query($base)) {
+                                continue;
+                            }
+                            $url = "?" . Security::base64urlEncode('qry') . "=" . Security::base64urlEncode($base);
+                            $active = ($activeQry === $base) ? 'active' : '';
+                            
+                            echo "<div class='comyli-nav-item $active'>";
+                            echo "<a href='$url' class='comyli-nav-link'>📁 " . Security::escapeHtml($base) . "</a>";
+                            
+                            if ($this->config->get('edit') && $this->config->get('editQueriesFrontend')) {
+                                $code = file_get_contents($f);
+                                $allQueries[$base] = $code;
+                                echo "<button type='button' class='comyli-edit-qry-btn' data-qry='" . Security::escapeAttr($base) . "' title='Bearbeiten'>&#9998;</button>";
+                            }
+                            echo "</div>";
+                        }
                     }
                 }
                 if ($this->config->get('edit') && $this->config->get('editQueriesFrontend')) {

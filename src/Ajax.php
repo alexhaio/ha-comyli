@@ -23,16 +23,8 @@ class Ajax {
             wp_die('Table not found.');
         }
 
-        $unserialized = maybe_unserialize($post->post_content);
-        $postConfig = is_array($unserialized) ? $unserialized : [];
-        if (empty($postConfig)) {
-            $meta = get_post_meta($post->ID);
-            foreach ($meta as $k => $v) {
-                if (str_starts_with($k, '_comyli_')) {
-                    $postConfig[substr($k, 8)] = maybe_unserialize($v[0]);
-                }
-            }
-        }
+        $resolved = ConnectionManager::resolve_table_config($id);
+        $postConfig = $resolved ?: [];
         $config = array_merge($this->pluginConfig->plugin, $postConfig);
         
         $config['queries'] = '../wp-content/plugins/ha-comyli/queries/';
@@ -45,32 +37,10 @@ class Ajax {
         $config['path']['css'] = "";
         $config['path']['js'] = "";
         
-        if (!empty($config['use_wp_db'])) {
-            global $wpdb;
-            if ($wpdb->dbh instanceof \mysqli) {
-                $config['mysqli'] = $wpdb->dbh;
-            } else {
-                // Fallback
-                $config['mysqli'] = new \mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
-                $config['mysqli']->query("SET character_set_results = 'utf8', character_set_client = 'utf8', character_set_connection = 'utf8', character_set_database = 'utf8', character_set_server = 'utf8'");
-            }
-        } else {
-            $dbserver = $config['dbserver'] ?? '';
-            $dbuser = $config['dbuser'] ?? '';
-            $dbpass = $config['dbpass'] ?? '';
-            $db = $config['db'] ?? '';
-            
-            if (!empty($dbserver)) {
-                try {
-                    $config['mysqli'] = new \mysqli($dbserver, $dbuser, $dbpass, $db);
-                    if ($config['mysqli']->connect_error) {
-                        throw new \Exception($config['mysqli']->connect_error);
-                    }
-                    $config['mysqli']->query("SET character_set_results = 'utf8', character_set_client = 'utf8', character_set_connection = 'utf8', character_set_database = 'utf8', character_set_server = 'utf8'");
-                } catch (\Exception $e) {
-                    wp_die('Datenbankfehler: Verbindung fehlgeschlagen.');
-                }
-            }
+        try {
+            $config['mysqli'] = ConnectionManager::get_connection_for_config($config);
+        } catch (\Exception $e) {
+            wp_die('Datenbankfehler: ' . esc_html($e->getMessage()));
         }
         
         $_GET['Y3N2'] = 1;

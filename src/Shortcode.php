@@ -74,15 +74,24 @@ class Shortcode {
         $postConfig = [];
         
         if ($id > 0) {
-            $post = get_post($id);
-            if ($post) {
-                $unserialized = maybe_unserialize($post->post_content);
-                $postConfig = is_array($unserialized) ? $unserialized : [];
-                
-                $meta = get_post_meta($post->ID);
-                foreach ($meta as $k => $v) {
-                    if (str_starts_with($k, '_comyli_')) {
-                        $postConfig[substr($k, 8)] = maybe_unserialize($v[0]);
+            $resolved = ConnectionManager::resolve_table_config($id);
+            if ($resolved) {
+                $postConfig = $resolved;
+            }
+        } elseif (!empty($atts['table'])) {
+            $resolved = ConnectionManager::resolve_table_config($atts['table']);
+            if ($resolved) {
+                $postConfig = $resolved;
+                $id = $resolved['comyli_id'] ?? 0;
+            }
+        } elseif (!empty($atts['query'])) {
+            $queryPost = QueryManager::find_query_post($atts['query']);
+            if ($queryPost) {
+                $tableId = (int)get_post_meta($queryPost->ID, QueryManager::META_TABLE_ID, true);
+                if ($tableId > 0) {
+                    $resolved = ConnectionManager::resolve_table_config($tableId);
+                    if ($resolved) {
+                        $postConfig = $resolved;
                     }
                 }
             }
@@ -100,13 +109,6 @@ class Shortcode {
     }
 
     /**
-     * Direct programmatic rendering of a CoMyLi table or query without post dependency.
-     *
-     * @param array<string, mixed> $args
-     * @param Config|null $pluginConfig
-     * @return string
-     */
-    /**
      * Renders a list of queries accessible to the user based on capability.
      *
      * @param array<string, mixed>|string $atts
@@ -117,6 +119,13 @@ class Shortcode {
         return Blocks::renderQueryListDirect($atts, $this->pluginConfig);
     }
 
+    /**
+     * Direct programmatic rendering of a CoMyLi table or query.
+     *
+     * @param array<string, mixed> $args
+     * @param Config|null $pluginConfig
+     * @return string
+     */
     public static function renderDirect(array $args, ?Config $pluginConfig = null): string {
         $pluginPath = $pluginConfig ? $pluginConfig->plugin['path'] : dirname(__DIR__);
         $pluginUrl = $pluginConfig ? $pluginConfig->plugin['url'] : plugin_dir_url(dirname(__DIR__) . '/ha-comyli.php');
@@ -130,9 +139,29 @@ class Shortcode {
             'edit'      => false,
             'filter'    => true,
             'csvExport' => false,
-            'use_wp_db' => true,
             'queries'   => $pluginPath . '/queries/',
         ];
+
+        // If credentials are not explicitly provided, try to resolve table or query configuration
+        if (empty($args['dbserver']) && !isset($args['use_wp_db'])) {
+            if (!empty($args['table'])) {
+                $resolved = ConnectionManager::resolve_table_config($args['table']);
+                if ($resolved) {
+                    $args = array_merge($resolved, $args);
+                }
+            } elseif (!empty($args['query'])) {
+                $queryPost = QueryManager::find_query_post($args['query']);
+                if ($queryPost) {
+                    $tableId = (int)get_post_meta($queryPost->ID, QueryManager::META_TABLE_ID, true);
+                    if ($tableId > 0) {
+                        $resolved = ConnectionManager::resolve_table_config($tableId);
+                        if ($resolved) {
+                            $args = array_merge($resolved, $args);
+                        }
+                    }
+                }
+            }
+        }
 
         $config = array_merge($defaults, $args);
 
@@ -144,7 +173,7 @@ class Shortcode {
             $config['tables'] = $config['table'];
         }
 
-        // Check Permissions (AP6)
+        // Check Permissions
         $queryToCheck = $config['query'] ?? ($config['qry'] ?? '');
         if (!empty($queryToCheck) && class_exists(Permissions::class) && !Permissions::can_view_query($queryToCheck)) {
             return '<div class="comyli-error">Keine Berechtigung zum Anzeigen dieser Abfrage.</div>';
@@ -177,31 +206,11 @@ class Shortcode {
             return function_exists('wp_unslash') ? \wp_unslash($value) : stripslashes_deep($value);
         };
 
-        if (!empty($config['use_wp_db']) || empty($config['dbserver'])) {
-            global $wpdb;
-            if (isset($wpdb) && $wpdb->dbh instanceof \mysqli) {
-                $config['mysqli'] = $wpdb->dbh;
-            } elseif (defined('DB_HOST') && defined('DB_USER') && defined('DB_PASSWORD') && defined('DB_NAME')) {
-                $config['mysqli'] = new \mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
-                $config['mysqli']->query("SET character_set_results = 'utf8', character_set_client = 'utf8', character_set_connection = 'utf8', character_set_database = 'utf8', character_set_server = 'utf8'");
-            }
-        } else {
-            $dbserver = $config['dbserver'] ?? '';
-            $dbuser = $config['dbuser'] ?? '';
-            $dbpass = $config['dbpass'] ?? '';
-            $db = $config['db'] ?? '';
-            
-            if (!empty($dbserver)) {
-                try {
-                    $config['mysqli'] = new \mysqli($dbserver, $dbuser, $dbpass, $db);
-                    if ($config['mysqli']->connect_error) {
-                        throw new \Exception($config['mysqli']->connect_error);
-                    }
-                    $config['mysqli']->query("SET character_set_results = 'utf8', character_set_client = 'utf8', character_set_connection = 'utf8', character_set_database = 'utf8', character_set_server = 'utf8'");
-                } catch (\Exception $e) {
-                    return "Datenbankfehler: Verbindung fehlgeschlagen.";
-                }
-            }
+        // Connect to the appropriate database (external or WordPress DB)
+        try {
+            $config['mysqli'] = ConnectionManager::get_connection_for_config($config);
+        } catch (\Exception $e) {
+            return '<div class="comyli-error">Datenbankfehler: ' . esc_html($e->getMessage()) . '</div>';
         }
 
         ob_start();
