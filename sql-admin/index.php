@@ -1538,14 +1538,6 @@ class App {
             ob_end_clean();
         }
 
-        header('Content-Description: File Transfer');
-        header('Content-Type: text/csv; charset=utf-8');
-        header('Content-Disposition: attachment; filename=export_' . gmdate('Y-m-d_H-i-s') . '.csv');
-        header('Pragma: no-cache');
-        header('Expires: 0');
-        
-        echo "sep=,\n";
-        
         $qryName = $this->getRequestedQuery();
         $isQuery = !empty($qryName);
         if ($isQuery) {
@@ -1554,6 +1546,37 @@ class App {
         } else {
             $fromClause = "FROM `$table`";
         }
+
+        $nameParts = [];
+        if (!empty($table)) {
+            $nameParts[] = preg_replace('/[^a-zA-Z0-9_-]/', '_', $table);
+        }
+        if ($isQuery) {
+            $qLabel = $qryName;
+            if (strpos($qryName, 'cpt_') === 0 && function_exists('get_post')) {
+                $cptId = (int)substr($qryName, 4);
+                $cptPost = get_post($cptId);
+                if ($cptPost) {
+                    $qLabel = $cptPost->post_name ?: $cptPost->post_title;
+                }
+            } else {
+                $qLabel = preg_replace('/\.sql$/i', '', $qLabel);
+            }
+            $cleanQ = preg_replace('/[^a-zA-Z0-9_-]/', '_', $qLabel);
+            $nameParts[] = 'abfrage_' . $cleanQ;
+        }
+
+        $baseName = !empty($nameParts) ? implode('_', $nameParts) : 'export';
+        $baseName = preg_replace('/_+/', '_', trim($baseName, '_'));
+        $filename = $baseName . '_' . gmdate('Y-m-d_H-i-s') . '.csv';
+
+        header('Content-Description: File Transfer');
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+        
+        echo "sep=,\n";
         
         $fields = [];
         $res = $this->db->query("SELECT * $fromClause LIMIT 0");

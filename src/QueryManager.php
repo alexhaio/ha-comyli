@@ -24,8 +24,14 @@ class QueryManager {
         add_action('init', [$this, 'registerPostType']);
         add_action('add_meta_boxes', [$this, 'addMetaBoxes']);
         add_action('save_post_' . self::POST_TYPE, [$this, 'savePost']);
+        add_filter('wp_insert_post_data', [$this, 'filterPostData'], 10, 2);
         add_action('admin_enqueue_scripts', [$this, 'enqueueEditorAssets']);
         
+        // Revision support for SQL queries and metadata
+        add_filter('_wp_post_revision_fields', [$this, 'filterRevisionFields'], 10, 2);
+        add_filter('wp_post_revision_meta_keys', [$this, 'filterRevisionMetaKeys']);
+        add_action('wp_restore_post_revision', [$this, 'restoreRevisionMeta'], 10, 2);
+
         // Custom Columns in post list
         add_filter('manage_' . self::POST_TYPE . '_posts_columns', [$this, 'setCustomColumns']);
         add_action('manage_' . self::POST_TYPE . '_posts_custom_column', [$this, 'renderCustomColumn'], 10, 2);
@@ -60,10 +66,12 @@ class QueryManager {
             'hierarchical'       => false,
             'menu_position'      => 31,
             'menu_icon'          => 'dashicons-database',
-            'supports'           => ['title'],
+            'supports'           => ['title', 'revisions'],
+            'taxonomies'         => ['category'],
         ];
 
         register_post_type(self::POST_TYPE, $args);
+        register_taxonomy_for_object_type('category', self::POST_TYPE);
     }
 
     public function enqueueEditorAssets($hook): void {
@@ -171,7 +179,6 @@ class QueryManager {
     public function renderPermissionsBox(\WP_Post $post): void {
         $currentCap = get_post_meta($post->ID, self::META_CAPABILITY, true);
         $desc = get_post_meta($post->ID, self::META_DESCRIPTION, true);
-        $category = get_post_meta($post->ID, self::META_CATEGORY, true);
         
         $currentTableId = (int)get_post_meta($post->ID, self::META_TABLE_ID, true);
         if ($currentTableId === 0 && isset($_GET['comyli_table_id'])) {
@@ -226,13 +233,7 @@ class QueryManager {
                         <p class="description">Wird im Block <em>CoMyLi Abfrage-Liste</em> und in Übersichten angezeigt.</p>
                     </td>
                 </tr>
-                <tr>
-                    <th scope="row"><label for="comyli_category">Kategorie / Bereich</label></th>
-                    <td>
-                        <input type="text" id="comyli_category" name="comyli_category" value="<?php echo esc_attr($category); ?>" class="regular-text" placeholder="z. B. Migration, Bauhof, Finanzen">
-                        <p class="description">Erlaubt das Gruppieren und Filtern von Abfragen im Abfrage-Listen-Block.</p>
-                    </td>
-                </tr>
+
             </tbody>
         </table>
 
@@ -429,8 +430,21 @@ class QueryManager {
                 }
                 break;
             case 'category':
-                $cat = get_post_meta($post_id, self::META_CATEGORY, true);
-                echo $cat ? '<span class="badge" style="background:#e0f2fe; color:#0369a1; padding:2px 8px; border-radius:12px; font-size:11px;">' . esc_html($cat) . '</span>' : '—';
+                $categories = get_the_category($post_id);
+                if (!empty($categories)) {
+                    $catLinks = [];
+                    foreach ($categories as $cat) {
+                        $catUrl = add_query_arg([
+                            'post_type'     => self::POST_TYPE,
+                            'category_name' => $cat->slug,
+                        ], 'edit.php');
+                        $catLinks[] = '<a href="' . esc_url($catUrl) . '" style="background:#e0f2fe; color:#0369a1; padding:2px 8px; border-radius:12px; font-size:11px; text-decoration:none; font-weight:500;">' . esc_html($cat->name) . '</a>';
+                    }
+                    echo implode(' ', $catLinks);
+                } else {
+                    $legacyCat = get_post_meta($post_id, self::META_CATEGORY, true);
+                    echo $legacyCat ? '<span style="background:#f1f5f9; color:#475569; padding:2px 8px; border-radius:12px; font-size:11px;">' . esc_html($legacyCat) . '</span>' : '—';
+                }
                 break;
             case 'capability':
                 $cap = get_post_meta($post_id, self::META_CAPABILITY, true);
@@ -477,15 +491,18 @@ class QueryManager {
             return;
         }
 
-        // Save SQL in post_content
+        // Save SQL in post_content if not already persisted by filterPostData
         if (isset($_POST['comyli_sql_code'])) {
             $sql = wp_unslash($_POST['comyli_sql_code']);
-            remove_action('save_post_' . self::POST_TYPE, [$this, 'savePost']);
-            wp_update_post([
-                'ID'           => $post_id,
-                'post_content' => $sql,
-            ]);
-            add_action('save_post_' . self::POST_TYPE, [$this, 'savePost']);
+            $currentPost = get_post($post_id);
+            if ($currentPost && $currentPost->post_content !== $sql) {
+                remove_action('save_post_' . self::POST_TYPE, [$this, 'savePost']);
+                wp_update_post([
+                    'ID'           => $post_id,
+                    'post_content' => $sql,
+                ]);
+                add_action('save_post_' . self::POST_TYPE, [$this, 'savePost']);
+            }
         }
 
         // Meta fields
@@ -605,9 +622,33 @@ class QueryManager {
 
         foreach ($posts as $p) {
             $slug = $p->post_name ?: 'abfrage-' . $p->ID;
-            $cat = get_post_meta($p->ID, self::META_CATEGORY, true);
-            if ($category && strcasecmp($cat, $category) !== 0) {
-                continue;
+            $terms = get_the_category($p->ID);
+            $catNames = !empty($terms) ? wp_list_pluck($terms, 'name') : [];
+            $catSlugs = !empty($terms) ? wp_list_pluck($terms, 'slug') : [];
+            $legacyCat = get_post_meta($p->ID, self::META_CATEGORY, true);
+            if (!empty($legacyCat) && !in_array($legacyCat, $catNames, true)) {
+                $catNames[] = $legacyCat;
+            }
+
+            if ($category) {
+                $match = false;
+                foreach ($catNames as $cn) {
+                    if (strcasecmp($cn, $category) === 0) {
+                        $match = true;
+                        break;
+                    }
+                }
+                if (!$match) {
+                    foreach ($catSlugs as $cs) {
+                        if (strcasecmp($cs, $category) === 0) {
+                            $match = true;
+                            break;
+                        }
+                    }
+                }
+                if (!$match) {
+                    continue;
+                }
             }
 
             $cap = get_post_meta($p->ID, self::META_CAPABILITY, true);
@@ -628,13 +669,66 @@ class QueryManager {
                     'slug'        => $slug,
                     'capability'  => $cap,
                     'description' => get_post_meta($p->ID, self::META_DESCRIPTION, true),
-                    'category'    => $cat,
+                    'category'    => implode(', ', $catNames),
+                    'categories'  => $catNames,
                     'shortcode'   => '[comyli_table query="' . $slug . '" layout="clean"]',
                 ];
             }
         }
 
         return $available;
+    }
+
+    /**
+     * Intercept post save to write SQL code into post_content prior to revision creation.
+     */
+    public function filterPostData(array $data, array $postarr): array {
+        if (($data['post_type'] ?? '') === self::POST_TYPE && isset($_POST['comyli_sql_code'])) {
+            if (isset($_POST['comyli_query_nonce']) && wp_verify_nonce($_POST['comyli_query_nonce'], 'comyli_save_query_meta')) {
+                $data['post_content'] = wp_unslash($_POST['comyli_sql_code']);
+            }
+        }
+        return $data;
+    }
+
+    /**
+     * Customize field labels on the revision diff screen.
+     */
+    public function filterRevisionFields(array $fields, $post): array {
+        $postType = is_array($post) ? ($post['post_type'] ?? '') : ($post->post_type ?? '');
+        if ($postType === self::POST_TYPE) {
+            $fields['post_title'] = 'Abfragetitel';
+            $fields['post_content'] = 'SQL-Abfragecode';
+        }
+        return $fields;
+    }
+
+    /**
+     * Include QueryManager metadata keys in revisions.
+     */
+    public function filterRevisionMetaKeys(array $keys): array {
+        $keys[] = self::META_TABLE_ID;
+        $keys[] = self::META_CAPABILITY;
+        $keys[] = self::META_DESCRIPTION;
+        return $keys;
+    }
+
+    /**
+     * Restore metadata when restoring a revision.
+     */
+    public function restoreRevisionMeta(int $postId, int $revisionId): void {
+        $parent = get_post($postId);
+        if (!$parent || $parent->post_type !== self::POST_TYPE) {
+            return;
+        }
+
+        $metaKeys = [self::META_TABLE_ID, self::META_CAPABILITY, self::META_DESCRIPTION];
+        foreach ($metaKeys as $metaKey) {
+            $metaVal = get_metadata('post', $revisionId, $metaKey, true);
+            if ($metaVal !== false && $metaVal !== '') {
+                update_post_meta($postId, $metaKey, $metaVal);
+            }
+        }
     }
 
     /**

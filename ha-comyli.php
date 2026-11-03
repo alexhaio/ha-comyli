@@ -11,7 +11,7 @@
  * @wordpress-plugin
  * Plugin Name:		CoMyLi - Configurable-MySQL-Light-Interface
  * Description:		Implements an easy-to-use interface for MySQL-Databases
- * Version:			3.1.0
+ * Version:			3.1.1
  * Author:			Alexander Hacker
  * Author URI:		https://edv-hacker.de
  * Text Domain:		comyli

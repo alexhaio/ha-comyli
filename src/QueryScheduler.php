@@ -154,7 +154,27 @@ class QueryScheduler {
             @file_put_contents($baseDir . '.htaccess', "Order Deny,Allow\nDeny from all\n<IfModule mod_authz_core.c>\nRequire all denied\n</IfModule>");
         }
 
-        $filename = sanitize_file_name($slug) . '_' . gmdate('Y-m-d_H-i-s') . '.csv';
+        $tableId = (int)get_post_meta($queryId, QueryManager::META_TABLE_ID, true);
+        $nameParts = [];
+        if ($tableId > 0) {
+            $tablePost = get_post($tableId);
+            if ($tablePost) {
+                $rawTable = get_post_meta($tableId, '_comyli_tables', true);
+                if (empty($rawTable)) {
+                    $rawTable = $tablePost->post_name ?: $tablePost->post_title;
+                }
+                $cleanTable = preg_replace('/[^a-zA-Z0-9_-]/', '_', $rawTable);
+                if (!empty($cleanTable)) {
+                    $nameParts[] = $cleanTable;
+                }
+            }
+        }
+        $cleanSlug = preg_replace('/[^a-zA-Z0-9_-]/', '_', $slug);
+        $nameParts[] = 'abfrage_' . $cleanSlug;
+
+        $baseName = !empty($nameParts) ? implode('_', $nameParts) : 'abfrage_' . $queryId;
+        $baseName = preg_replace('/_+/', '_', trim($baseName, '_'));
+        $filename = $baseName . '_' . gmdate('Y-m-d_H-i-s') . '.csv';
         $filePath = $baseDir . $filename;
 
         $fp = @fopen($filePath, 'w');
