@@ -233,6 +233,7 @@ class LegacySpecifics {
             }
         }
         $config['foreignKey']['input']['FDs_test'] = 'fachdienst';
+        $isExport = (isset($_GET['Y3N2']) && $_GET['Y3N2'] === '1') || (isset($_GET['aW1n']) && $_GET['aW1n'] === '1') || !empty($_GET['csv']);
         
         if (
             current_user_can('stabsstelledigitalisierung') ||
@@ -241,7 +242,8 @@ class LegacySpecifics {
             current_user_can('datenschutz')
         ) {
             // Administrator-like access
-            echo '<style>
+            if (!$isExport) {
+                echo '<style>
                 .comyli .td:nth-of-type(4) { width: 600px; }
                 /* Horizontally Sticky Columns */
                 .comyli .td:nth-of-type(1) { width: 80px; min-width: 80px; max-width: 80px; position: sticky; left: 0; z-index: 6; background-color: inherit; border-right: 1px solid #e2e8f0; }
@@ -249,6 +251,7 @@ class LegacySpecifics {
                 .comyli .td { max-width: 400px; }
                 #colNames > .td:nth-of-type(1), #colNames > .td:nth-of-type(2) { z-index: 12; }
             </style>';
+            }
         } else {
             $config['edit'] = 0;
         
@@ -274,6 +277,7 @@ class LegacySpecifics {
                     "Kosten" => true, #19
                     "Bemerkungen" => true, #20
                 ];
+                if (!$isExport) {
 				echo '<style>
 					/* Horizontally Sticky Columns */
 					.comyli .td:nth-of-type(1) { width: 80px; min-width: 80px; max-width: 80px; position: sticky; left: 0; z-index: 6; background-color: inherit; border-right: 1px solid #e2e8f0; }
@@ -285,6 +289,7 @@ class LegacySpecifics {
 					.comyli .td:nth-of-type(7) { max-width: 400px; } /* Verfahrensadministrator */
 					.comyli .td:nth-of-type(13), .comyli .td:nth-of-type(14), .comyli .td:nth-of-type(15), .comyli .td:nth-of-type(16) { width: 400px; }
 				</style>';
+                }
 			} else {
 				$config['limit_cols']['wp_ha_verfahrensliste_edv_rpa'] = [
 					"Name_des_Verfahrens" => true,
@@ -294,6 +299,7 @@ class LegacySpecifics {
 					"Link" => true,
 					"Fachdienste" => true,
 				];
+                if (!$isExport) {
 				echo '<style>
 					/* Horizontally Sticky Columns */
 					.comyli .td:nth-of-type(1) { width: 80px; min-width: 80px; max-width: 80px; position: sticky; left: 0; z-index: 6; background-color: inherit; border-right: 1px solid #e2e8f0; }
@@ -303,6 +309,7 @@ class LegacySpecifics {
 					/*.comyli .td:nth-of-type(5) { max-width: 400px; }*/ /* Nutzungshinweise */
 					.comyli .td:nth-of-type(6) { max-width: 200px; } /* Link */
 				</style>';
+                }
             }
         }
         return $config;

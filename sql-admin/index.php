@@ -1534,6 +1534,9 @@ class App {
     }
 
     private function renderCsv(string $table): void {
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
 
         header('Content-Description: File Transfer');
         header('Content-Type: text/csv; charset=utf-8');

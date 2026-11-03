@@ -215,11 +215,16 @@ class Shortcode {
 
         ob_start();
 
-        $restUrl = function_exists('rest_url') ? esc_url_raw(rest_url('comyli/v1/')) : '';
-        $nonce = function_exists('wp_create_nonce') ? wp_create_nonce('wp_rest') : '';
-        $postId = (int)($config['comyli_id'] ?? 0);
-        echo "<script>window.COMYLI_ENV = { restUrl: '" . esc_js($restUrl) . "', nonce: '" . esc_js($nonce) . "', postId: " . $postId . ", atts: " . json_encode($args) . " };</script>";
-        echo "<style>body{ overflow: scroll; }</style>";
+        $isCsv = (isset($_GET['Y3N2']) && $_GET['Y3N2'] === '1') || (isset($_GET['csv']) && $_GET['csv'] === '1');
+        $isImg = (isset($_GET['aW1n']) && $_GET['aW1n'] === '1') || (isset($_GET['img']) && $_GET['img'] === '1');
+
+        if (!$isCsv && !$isImg) {
+            $restUrl = function_exists('rest_url') ? esc_url_raw(rest_url('comyli/v1/')) : '';
+            $nonce = function_exists('wp_create_nonce') ? wp_create_nonce('wp_rest') : '';
+            $postId = (int)($config['comyli_id'] ?? 0);
+            echo "<script>window.COMYLI_ENV = { restUrl: '" . esc_js($restUrl) . "', nonce: '" . esc_js($nonce) . "', postId: " . $postId . ", atts: " . json_encode($args) . " };</script>";
+            echo "<style>body{ overflow: scroll; }</style>";
+        }
 
         $config['is_wp'] = true;
 
