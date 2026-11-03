@@ -1,9 +1,9 @@
 === CoMyLi - Configurable-MySQL-Light-Interface ===
 Contributors: mystryx1337, ha
-Tags: mysql, admin, table, reporting, crud, rest-api, gutenberg, chart
+Tags: mysql, admin, table, reporting, crud, rest-api, gutenberg, chart, cron, export
 Requires at least: 6.0
 Tested up to: 6.7
-Stable tag: 3.0.0
+Stable tag: 3.1.0
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -15,12 +15,16 @@ CoMyLi (Configurable MySQL Light Interface) transforms MySQL databases and SQL q
 
 = Features =
 
-* **Gutenberg Blocks:** Drag-and-drop data tables (`ha-comyli/query-table`), interactive Chart.js diagrams (`ha-comyli/chart`), and live KPI metric tiles (`ha-comyli/kpi-card`).
-* **Embedded / Clean Mode:** Seamless integration into modal windows, tabs, and dashboard cards (`layout="clean"` or `comyli_render()`).
+* **Gutenberg Blocks:** Drag-and-drop data tables (`ha-comyli/query-table`), interactive Chart.js diagrams (`ha-comyli/chart`), live KPI metric tiles (`ha-comyli/kpi-card`), and report overviews (`ha-comyli/query-list`).
+* **QueryManager (CPT `comyli_query`):** WordPress backend editor for reusable SQL queries with syntax highlighting, parameter bindings, category filters, and capability-based access control.
+* **External Database Connection Manager:** Map queries and tables to external MySQL database servers or the local WordPress database with automatic credential resolution.
+* **Scheduled Queries & CSV Archiving:** Recurring WP-Cron query execution (daily, weekly, monthly) with automatic server-side CSV archiving and secure downloads.
+* **Dynamic System Capabilities:** Full integration with WordPress roles and capabilities via Select2 search, eliminating hardcoded permission strings.
+* **Clean & Embedded Mode:** Seamless integration into modal windows, tabs, and dashboard cards (`layout="clean"` or `comyli_render()`).
 * **Dynamic Context Parameters:** Parameterized SQL queries (`:parameter_name`) with automatic token resolution (`{current_user_id}`, `{current_user_name}`, `{get:param}`).
 * **Headless REST API:** Modern JSON endpoints for SPA/Vue/React applications (`/wp-json/comyli/v1/query/{name}` and `/wp-json/comyli/v1/table/{name}`).
-* **Custom Column Renderers:** Powerful hook system (`apply_filters('comyli_render_cell')` and `apply_filters('comyli_render_column_{name}')`) for custom badges and document links (e.g., 2charta eAkte).
-* **Granular WordPress Permissions:** Fine-grained access control with custom capabilities (`comyli_cap_query_{name}`, `comyli_cap_table_edit_{name}`).
+* **Clean CSV Export:** Header-safe, buffer-cleared CSV streaming with UTF-8 BOM for Microsoft Excel.
+* **Custom Column Renderers:** Powerful hook system (`apply_filters('comyli_render_cell')` and `apply_filters('comyli_render_column_{name}')`).
 * **LiveSync (Auto / An / Aus):** Real-time optimistic concurrency synchronization with multi-user collision protection.
 * **Auto-Updates via GitHub:** Native integration with Plugin-Update-Checker (PUC v5).
 
@@ -28,10 +32,22 @@ CoMyLi (Configurable MySQL Light Interface) transforms MySQL databases and SQL q
 
 1. Upload the plugin files to the `/wp-content/plugins/ha-comyli` directory, or install via GitHub Updater.
 2. Activate the plugin through the 'Plugins' screen in WordPress.
-3. Place `.sql` query files in `/queries/` or use standard MySQL database tables.
-4. Add tables via Gutenberg block, shortcode `[comyli_table query="MyQuery" layout="clean"]`, or in PHP via `echo comyli_render(['query' => 'MyQuery']);`.
+3. Define MySQL database tables under 'CoMyLi Tabellen' or create queries in the 'Abfragen (Queries)' editor.
+4. Add tables or queries via Gutenberg blocks, shortcode `[comyli_table query="MyQuery" layout="clean"]`, or in PHP via `echo comyli_render(['query' => 'MyQuery']);`.
 
 == Changelog ==
+
+= 3.1.0 =
+* Added: QueryManager Custom Post Type (`comyli_query`) with syntax-highlighted SQL editor and capability protection.
+* Added: Gutenberg Block `ha-comyli/query-list` and shortcode `[comyli_query_list]` for dashboard report listings.
+* Added: Central `ConnectionManager` with automatic credential resolution for external databases across blocks, shortcodes, and REST API.
+* Added: Database connection reuse in QueryManager to execute queries directly against external table databases.
+* Added: Dynamic WordPress capability selection via Select2 with custom tag creation.
+* Added: `QueryScheduler` with automated WP-Cron execution (daily, weekly, monthly), CSV generation, and download management.
+* Fixed: Output buffering in CSV export preventing `<script>` and `<style>` tags from corrupting exported CSV files.
+* Fixed: External database connection fallback to WordPress DB when displaying tables in the frontend.
+* Removed: Hardcoded capability array and isolated local DB checkbox in QueryManager.
+* Maintenance: Departmental query files removed from public repository; added `.gitignore` rules for query directories.
 
 = 3.0.0 =
 * Added: Gutenberg Blocks for Abfrage-Tabellen (`ha-comyli/query-table`), Chart.js-Diagramme (`ha-comyli/chart`), and KPI-Kacheln (`ha-comyli/kpi-card`).
