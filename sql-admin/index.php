@@ -261,6 +261,26 @@ class ConfigHandler {
 // -----------------------------------------------------------------------------
 
 class FieldHandler {
+    private static array $tableColumnsCache = [];
+
+    /**
+     * Retrieves full column information (including comments, defaults, types) for a table.
+     */
+    public static function getTableColumns(string $table, Database $db): array {
+        if (empty($table)) return [];
+        if (!isset(self::$tableColumnsCache[$table])) {
+            self::$tableColumnsCache[$table] = [];
+            $escaped = $db->getMysqli()->real_escape_string($table);
+            $res = $db->query("SHOW FULL COLUMNS FROM `$escaped`");
+            if ($res) {
+                while ($row = $res->fetch_assoc()) {
+                    self::$tableColumnsCache[$table][$row['Field']] = $row;
+                }
+            }
+        }
+        return self::$tableColumnsCache[$table];
+    }
+
     /**
      * Extracts and maps field information from a mysqli_field object.
      */
@@ -295,13 +315,18 @@ class FieldHandler {
             $_POST[$val->name] = 0;
         }
 
-        // Default detection
-        if (empty($info['def']) && !$info['flag']['noDefault'] && !empty($val->table)) {
-            $table = $db->getMysqli()->real_escape_string($val->table);
-            $field = $db->getMysqli()->real_escape_string($val->name);
-            $res = $db->query("SHOW COLUMNS FROM `$table` WHERE Field = '$field'");
-            if ($res && $row = $res->fetch_assoc()) {
-                $info['default'] = $row['Default'];
+        // Column comments and Default detection
+        $tableName = !empty($val->orgtable) ? $val->orgtable : $val->table;
+        $fieldName = !empty($val->orgname) ? $val->orgname : $val->name;
+        $info['comment'] = '';
+
+        if (!empty($tableName)) {
+            $cols = self::getTableColumns($tableName, $db);
+            if (isset($cols[$fieldName])) {
+                $info['comment'] = $cols[$fieldName]['Comment'] ?? '';
+                if (empty($info['def']) && !$info['flag']['noDefault'] && isset($cols[$fieldName]['Default'])) {
+                    $info['default'] = $cols[$fieldName]['Default'];
+                }
             }
         }
 
@@ -618,22 +643,38 @@ class HtmlRenderer {
         
         // Enum Dropdown
         if (!empty($info['flag']['enum']) || $type == 254) {
-            $table = $this->db->getMysqli()->real_escape_string($info['table']);
-            $field = $this->db->getMysqli()->real_escape_string($info['name']);
-            $res = $this->db->query("SHOW COLUMNS FROM `$table` WHERE Field = '$field'");
-            if ($res && $finfo = $res->fetch_object()) {
-                $typeStr = substr($finfo->Type, strpos($finfo->Type, "'"));
-                $typeStr = substr($typeStr, 0, -1);
-                $parts = explode("','", substr($typeStr, 1));
-                
-                $out = "<select $baseAttr>";
-                $out .= "<option value=''></option>";
-                foreach ($parts as $p) {
-                    $sel = ($p === $value) ? " selected" : "";
-                    $out .= "<option value='" . Security::escapeAttr($p) . "'$sel>" . Security::escapeHtml($p) . "</option>";
+            $table = !empty($info['table']) ? $info['table'] : '';
+            $field = $info['name'];
+            $finfoType = '';
+            if (!empty($table)) {
+                $cols = FieldHandler::getTableColumns($table, $this->db);
+                if (isset($cols[$field])) {
+                    $finfoType = $cols[$field]['Type'] ?? '';
                 }
-                $out .= "</select>";
-                return $out;
+            }
+            if (empty($finfoType)) {
+                $escapedTable = $this->db->getMysqli()->real_escape_string($table);
+                $escapedField = $this->db->getMysqli()->real_escape_string($field);
+                $res = $this->db->query("SHOW COLUMNS FROM `$escapedTable` WHERE Field = '$escapedField'");
+                if ($res && $finfo = $res->fetch_object()) {
+                    $finfoType = $finfo->Type ?? '';
+                }
+            }
+            if (!empty($finfoType)) {
+                $parts = [];
+                if (preg_match_all("/'((?:''|[^'])*)'/", $finfoType, $matches)) {
+                    $parts = array_map(function($v) { return str_replace("''", "'", $v); }, $matches[1]);
+                }
+                if (!empty($parts)) {
+                    $out = "<select $baseAttr>";
+                    $out .= "<option value=''></option>";
+                    foreach ($parts as $p) {
+                        $sel = ($p === $value) ? " selected" : "";
+                        $out .= "<option value='" . Security::escapeAttr($p) . "'$sel>" . Security::escapeHtml($p) . "</option>";
+                    }
+                    $out .= "</select>";
+                    return $out;
+                }
             }
         }
         
@@ -831,11 +872,8 @@ class HtmlRenderer {
         
         if ($res && $finfo = $res->fetch_object()) {
             if ($finfo->Null === 'YES') $isNull = true;
-            $typeStr = substr($finfo->Type, strpos($finfo->Type, "'"));
-            $typeStr = substr($typeStr, 0, -1);
-            $parts = explode("','", substr($typeStr, 1));
-            foreach ($parts as $p) {
-                $enumOpts[] = $p;
+            if (!empty($finfo->Type) && preg_match_all("/'((?:''|[^'])*)'/", $finfo->Type, $matches)) {
+                $enumOpts = array_map(function($v) { return str_replace("''", "'", $v); }, $matches[1]);
             }
         }
         
@@ -999,7 +1037,7 @@ class HtmlRenderer {
             // Search Row
             $searchKey = Security::base64urlEncode('search');
             $searchValue = isset($_GET[$searchKey]) ? Security::unslash($_GET[$searchKey]) : '';
-            $out .= "<div class='tr comyli-no-print'><div class='td'><input form='fsp' type='submit' value='Suchen &#9775;'></div>";
+            $out .= "<div class='tr comyli-no-print searchRow'><div class='td'><input form='fsp' type='submit' value='Suchen &#9775;'></div>";
             $out .= "<div class='td volltextsuche'><input form='fsp' name='" . Security::escapeAttr($searchKey) . "' value='" . Security::escapeAttr($searchValue) . "' placeholder='Volltextsuche'></div>";
             for ($i = 0; $i < $visibleFieldsCount - 1; $i++) {
                 $out .= "<div class='td'></div>";
@@ -1043,9 +1081,16 @@ class HtmlRenderer {
             
             $jsCol = Security::escapeAttr($colName);
             
-            $out .= "<div class='td colNamesWrap'><div class='colnames' style='cursor:pointer; user-select:none;' onclick='comyliSort(\"$jsCol\", \"$nextDir\")'>";
-            $out .= Security::escapeHtml($colName) . $arrow;
-            $out .= "</div></div>";
+            $comment = $field['comment'] ?? '';
+            $titleAttr = !empty($comment) ? " title='" . Security::escapeAttr($comment) . "'" : "";
+            $out .= "<div class='td colNamesWrap'>";
+            $out .= "<div class='colnames'$titleAttr style='cursor:pointer; user-select:none;' onclick='comyliSort(\"$jsCol\", \"$nextDir\")'>";
+            $out .= "<span>" . Security::escapeHtml($colName) . $arrow . "</span>";
+            if (!empty($comment)) {
+                $out .= "<span class='comyli-col-info' title='" . Security::escapeAttr($comment) . "' onclick='event.stopPropagation()'>&#9432;</span>";
+            }
+            $out .= "</div>";
+            $out .= "</div>";
         }
         $out .= "</div>";
         

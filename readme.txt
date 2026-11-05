@@ -3,7 +3,7 @@ Contributors: mystryx1337, ha
 Tags: mysql, admin, table, reporting, crud, rest-api, gutenberg, chart, cron, export
 Requires at least: 6.0
 Tested up to: 6.7
-Stable tag: 3.1.3
+Stable tag: 3.1.4
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -36,6 +36,11 @@ CoMyLi (Configurable MySQL Light Interface) transforms MySQL databases and SQL q
 4. Add tables or queries via Gutenberg blocks, shortcode `[comyli_table query="MyQuery" layout="clean"]`, or in PHP via `echo comyli_render(['query' => 'MyQuery']);`.
 
 == Changelog ==
+
+= 3.1.4 =
+* Fixed: Volltextsuche input field decoupled from column 2 width via CSS absolute overlay (placeholder and query remain fully visible without forcing column expansion).
+* Fixed: Trailing single quote on last ENUM values in filter dropdown and edit mode (`aktiv, inaktiv`).
+* Added: Column descriptions (Comments) from database schema restored with circular info badges (`ⓘ`) in table headers and hover tooltips.
 
 = 3.1.3 =
 * Added: Custom JavaScript Editor in Table Definition (`comyli`) with syntax highlighting and automatic frontend injection.

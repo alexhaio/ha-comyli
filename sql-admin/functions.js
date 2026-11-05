@@ -8,7 +8,8 @@ COMYLI.filter = {
 			elements[i].value = '';
 		}
 		
-		document.getElementsByClassName('volltextsuche')[0].children[0].value = '';
+		var searchInput = document.querySelector('.volltextsuche input');
+		if(searchInput){ searchInput.value = ''; }
 	},
 	
 	init: function(){
