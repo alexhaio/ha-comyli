@@ -10,87 +10,8 @@ class LegacySpecifics {
         $this->config = $config;
     }
 
-    public function migrateConfigs(): void {
-        if (!$this->config) {
-            return;
-        }
-
-        $legacy_tables = [
-            'arbokat' => 'Baumkataster (Arbokat)',
-            'wp_ha_sync_phonebook' => 'Telefonverzeichnis',
-            'wp_ha_verfahrensliste_edv_rpa' => 'Verfahrensliste',
-            'wp_ha_ask_user_for_information' => 'Ask User for Information',
-            'wp_ha_fuehrerscheinstelle_gebuehrenliste' => 'Führerscheinstelle',
-        ];
-
-        $existing_posts = get_posts([
-            'post_type' => $this->config->plugin['type'],
-            'post_status' => 'any',
-            'numberposts' => -1,
-        ]);
-
-        $existing_tables = [];
-        $debug_info = [];
-        foreach ($existing_posts as $post) {
-            // Fix any posts that are not published
-            if ($post->post_status !== 'publish' && $post->post_status !== 'auto-draft') {
-                wp_update_post([
-                    'ID' => $post->ID,
-                    'post_status' => 'publish'
-                ]);
-            }
-            
-            $data = @unserialize($post->post_content);
-            $tableName = is_array($data) ? ($data['tables'] ?? 'none') : 'not array';
-            if (is_array($data) && !empty($data['tables'])) {
-                $existing_tables[] = $data['tables'];
-            }
-            $debug_info[] = "ID: {$post->ID}, Status: {$post->post_status}, Table: {$tableName}";
-        }
-        
-        $log = "Existing Posts:\n" . implode("\n", $debug_info) . "\n\nExisting Tables: " . implode(', ', $existing_tables) . "\n\n";
-
-        foreach ($legacy_tables as $table => $title) {
-            if (!in_array($table, $existing_tables, true)) {
-                $data = [
-                    'use_wp_db'   => 1,
-                    'db'          => '',
-                    'dbuser'      => '',
-                    'dbpass'      => '',
-                    'dbserver'    => '',
-                    'tables'      => $table,
-                    'queries'     => '',
-                    'limit'       => 100,
-                    'edit'        => 1,
-                    'primaryEdit' => 1,
-                    'eval'        => 0,
-                    'listQueries' => 0,
-                    'listTables'  => 0,
-                    'csvExport'   => 1,
-                    'showTypes'   => 0,
-                    'editQueriesFrontend' => 0,
-                ];
-
-                $inserted_id = wp_insert_post([
-                    'post_title' => $title,
-                    'post_content' => serialize($data),
-                    'post_status' => 'publish',
-                    'post_type' => $this->config->plugin['type'],
-                ], true);
-                if (is_wp_error($inserted_id)) {
-                    $log .= "Error inserting $table: " . $inserted_id->get_error_message() . "\n";
-                } else {
-                    $log .= "Success inserting $table: ID $inserted_id\n";
-                }
-            } else {
-                $log .= "Skipped $table: Already exists.\n";
-            }
-        }
-        file_put_contents(dirname(__DIR__) . '/debug.txt', $log);
-    }
-
     public function register(): void {
-        // Allgemeine Fallback-Einstellungen fÃƒÂ¼r alle Tabellen
+        // Allgemeine Fallback-Einstellungen für alle Tabellen
         add_filter('comyli_config', [$this, 'applyGlobalSettings'], 10, 2);
         
         // Spezifische Einstellungen pro Tabelle
@@ -100,7 +21,7 @@ class LegacySpecifics {
         add_filter('comyli_config_wp_ha_ask_user_for_information', [$this, 'applyAskUser'], 10, 1);
         add_filter('comyli_config_wp_ha_fuehrerscheinstelle_gebuehrenliste', [$this, 'applyFuehrerscheinstelle'], 10, 1);
     }
-
+	
     /**
      * @param array<string, mixed> $config
      * @param string $stdTbl
@@ -112,6 +33,17 @@ class LegacySpecifics {
         $config['postOverride']['created'] = gmdate("Y-m-d H:i:s");
         $config['readonly']['createdUser'] = true;
         $config['valueP']['createdUser'] = wp_get_current_user()->user_login;
+		
+		
+        $fachdienste = json_decode(get_option('ha_ask_user_for_information_fachdienst', '{}'));
+        $config['foreignKey']['list']['fachdienst'] = [];
+        foreach ((array)$fachdienste as $data) {
+            if (isset($data->fachdienst)) {
+                $config['foreignKey']['list']['fachdienst'][] = $data->fachdienst;
+            }
+        }
+        $config['foreignKey']['input']['Fachdienst'] = 'fachdienst';
+		
         return $config;
     }
 
@@ -408,3 +340,4 @@ class LegacySpecifics {
         return $config;
     }
 }
+
