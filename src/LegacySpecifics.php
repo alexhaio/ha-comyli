@@ -203,20 +203,6 @@ class LegacySpecifics {
     public function applyPhonebook(array $config): array {
         $config['queries'] = './wp-content/plugins/ha-comyli/queries/telefonverzeichnis/';
         $config['stdQry'] = 'index';
-        echo '<style>
-            .comyli .td { font-size: 14px; }
-            .comyli .td:nth-of-type(2) { width: 150px; }
-            .comyli .td:nth-of-type(3) { width: 130px; }
-            .comyli .td:nth-of-type(4) { width: 130px; }
-            .comyli .td:nth-of-type(5) { width: 190px; }
-            .comyli .td:nth-of-type(6) { width: 100px; }
-            .comyli .td:nth-of-type(7) { width: 120px; }
-            .comyli .tr:not(#colNames):not(.comyli-no-print):not(.menu):not(.formAdd) .td:nth-of-type(3) { font-weight:bold; }
-            .comyli .tr:not(#colNames):not(.comyli-no-print):not(.menu):not(.formAdd) .td:nth-of-type(4) { font-size:70%; }
-            .comyli .tr:not(#colNames):not(.comyli-no-print):not(.menu):not(.formAdd) .td:nth-of-type(5) { font-size:80%; }
-            .comyli .tr:not(#colNames):not(.comyli-no-print):not(.menu):not(.formAdd) .td:nth-of-type(6) { font-weight:bold; }
-            .comyli .tr:not(#colNames):not(.comyli-no-print):not(.menu):not(.formAdd) .td:nth-of-type(7) { font-size:80%; }
-        </style>';
         return $config;
     }
 
@@ -419,37 +405,6 @@ class LegacySpecifics {
             $_GET['ZA'] = 'DESC';
         }
         
-        echo '<style>
-            .comyli .td { min-width: 25px; }
-            .comyli .table > .tr > .td > input[name="nr"] { width: 75px !important; min-width: 0 !important; }
-            .comyli .table > .tr > .td > input[name="Px"] { width: 40px !important; min-width: 0 !important; }
-            .comyli .table > .tr > .td > input[name="Wohnort"] { width: 140px !important; min-width: 0 !important; }
-            .comyli .table > .tr > .td > input[name="Gebuehren"] { width: 90px !important; min-width: 0 !important; }
-            .comyli .table > .tr > .td > input[name="Klasse"], 
-            .comyli .table > .tr > .td > input[name="FAER"], 
-            .comyli .table > .tr > .td > input[name="ZFER_Probe"], 
-            .comyli .table > .tr > .td > input[name="ZFER"] { width: 70px !important; min-width: 0 !important; }
-            .comyli .table > .tr > .td > input[name="Bar_Gebuehren"], 
-            .comyli .table > .tr > .td > input[name="Bar_FAER"], 
-            .comyli .table > .tr > .td > input[name="Bar_ZFER_Probe"], 
-            .comyli .table > .tr > .td > input[name="Bar_ZFER"] { width: 15px !important; min-width: 0 !important; padding: 2px !important; }
-            .comyli .table > .tr > .td > input[name="Datum"] { width: 110px !important; min-width: 0 !important; }
-            .comyli .table > .tr > .td > input[name="Beleg"] { width: 140px !important; min-width: 0 !important; }
-            .comyli input.filter[name="d2hlcmVBMDFjcmVhdGVk"] { width: 160px !important; }
-            .comyli .btnDel { display: none; }
-            .comyli .btnAdd { padding-left: 20px; padding-right: 20px; }
-            .comyli .tr select:has(option[selected][value="offen"]) { color: red !important; }
-            .comyli .table > .tr > .td:nth-of-type(21) ~ .td {display:none;}
-        </style>
-        <script>
-        jQuery(document).ready(function() {
-            jQuery(".comyli .td input[type=\'checkbox\']").keypress(function(event) {
-                var keycode = (event.keyCode ? event.keyCode : event.which);
-                this.checked = !this.checked;
-            });
-        });
-        </script>';
         return $config;
     }
 }
-
