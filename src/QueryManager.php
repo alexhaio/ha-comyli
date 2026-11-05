@@ -13,6 +13,7 @@ class QueryManager {
     public const META_DESCRIPTION = '_comyli_description';
     public const META_CATEGORY = '_comyli_category';
     public const META_TABLE_ID = '_comyli_table_id';
+    public const META_CUSTOM_CSS = '_comyli_custom_css';
 
     private Config $config;
 
@@ -120,7 +121,17 @@ class QueryManager {
             'default'
         );
 
-        // 4. Info & Shortcode / Block
+        // 4. Custom CSS
+        add_meta_box(
+            'comyli_query_custom_css_box',
+            'Benutzerdefiniertes CSS (Custom CSS für diese Abfrage)',
+            [$this, 'renderCustomCssBox'],
+            self::POST_TYPE,
+            'normal',
+            'default'
+        );
+
+        // 5. Info & Shortcode / Block
         add_meta_box(
             'comyli_query_usage_box',
             'Verwendung & Integration',
@@ -376,6 +387,52 @@ class QueryManager {
         <?php
     }
 
+    public function renderCustomCssBox(\WP_Post $post): void {
+        $customCss = (string)get_post_meta($post->ID, self::META_CUSTOM_CSS, true);
+        ?>
+        <div style="margin-bottom:10px;">
+            <p class="description">
+                Geben Sie hier spezifisches CSS für diese Abfrage ein. Das CSS wird automatisch angewendet, wenn diese Abfrage gerendert wird.
+            </p>
+            <div id="comyli_query_css_editor" style="width:100%; min-height:180px; font-family:monospace; font-size:13px; background:#fff; border:1px solid #ccd0d4; padding:12px; box-sizing:border-box; border-radius:4px; line-height:1.5;"></div>
+            <textarea id="comyli_query_custom_css" name="comyli_query_custom_css" style="display:none;"><?php echo esc_textarea($customCss); ?></textarea>
+        </div>
+        <div style="background:#f8fafc; border-left:4px solid #0284c7; padding:8px 12px; font-size:12px; color:#334155;">
+            <strong>Hilfreiche CSS-Selektoren für Abfrage-Ergebnisse:</strong><br>
+            <code>.comyli .td:nth-of-type(3) { font-weight: bold; }</code> (Bestimmte Spalte hervorheben)<br>
+            <code>.comyli .td:nth-of-type(4) { width: 350px; }</code> (Spaltenbreite anpassen)<br>
+            <code>.comyli .tr:hover { background-color: #f8fafc; }</code> (Zeilen-Highlight)<br>
+            <code>#colNames > .td { font-weight: bold; background: #e2e8f0; }</code> (Spaltenüberschriften formatieren)
+        </div>
+        <script>
+        jQuery(document).ready(function($) {
+            const editorEl = document.getElementById('comyli_query_css_editor');
+            const hiddenEl = document.getElementById('comyli_query_custom_css');
+            if (typeof CodeJar !== 'undefined' && editorEl && hiddenEl) {
+                const highlight = el => {
+                    if (typeof Prism !== 'undefined' && Prism.languages && Prism.languages.css) {
+                        el.innerHTML = Prism.highlight(el.textContent, Prism.languages.css, 'css');
+                    } else {
+                        el.textContent = el.textContent;
+                    }
+                };
+                const jar = CodeJar(editorEl, highlight);
+                jar.updateCode(hiddenEl.value);
+                jar.onUpdate(code => {
+                    hiddenEl.value = code;
+                });
+            } else if (editorEl && hiddenEl) {
+                editorEl.style.display = 'none';
+                hiddenEl.style.display = 'block';
+                hiddenEl.style.width = '100%';
+                hiddenEl.style.minHeight = '180px';
+                hiddenEl.style.fontFamily = 'monospace';
+            }
+        });
+        </script>
+        <?php
+    }
+
     public function renderUsageBox(\WP_Post $post): void {
         $slug = $post->post_name ?: sanitize_title($post->post_title ?: 'abfrage-' . $post->ID);
         $shortcode = '[comyli_table query="' . $slug . '" layout="clean"]';
@@ -515,6 +572,12 @@ class QueryManager {
         }
         if (isset($_POST['comyli_category'])) {
             update_post_meta($post_id, self::META_CATEGORY, sanitize_text_field($_POST['comyli_category']));
+        }
+
+        if (isset($_POST['comyli_query_custom_css'])) {
+            $rawCss = wp_unslash($_POST['comyli_query_custom_css']);
+            $css = trim(preg_replace('/^<\s*style[^>]*>|<\s*\/\s*style\s*>$/i', '', $rawCss));
+            update_post_meta($post_id, self::META_CUSTOM_CSS, $css);
         }
         
         // Associated table / external DB
@@ -710,6 +773,7 @@ class QueryManager {
         $keys[] = self::META_TABLE_ID;
         $keys[] = self::META_CAPABILITY;
         $keys[] = self::META_DESCRIPTION;
+        $keys[] = self::META_CUSTOM_CSS;
         return $keys;
     }
 
@@ -722,7 +786,7 @@ class QueryManager {
             return;
         }
 
-        $metaKeys = [self::META_TABLE_ID, self::META_CAPABILITY, self::META_DESCRIPTION];
+        $metaKeys = [self::META_TABLE_ID, self::META_CAPABILITY, self::META_DESCRIPTION, self::META_CUSTOM_CSS];
         foreach ($metaKeys as $metaKey) {
             $metaVal = get_metadata('post', $revisionId, $metaKey, true);
             if ($metaVal !== false && $metaVal !== '') {

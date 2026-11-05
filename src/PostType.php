@@ -99,6 +99,15 @@ class PostType {
         );
 
         add_meta_box(
+            'comyli_custom_css_meta',
+            'Benutzerdefiniertes CSS (Custom CSS)',
+            [$this, 'renderCustomCssBox'],
+            $this->config->plugin['type'],
+            'normal',
+            'default'
+        );
+
+        add_meta_box(
             'comyli_info_meta',
             'CoMyLi Info',
             [$this, 'renderInfoBox'],
@@ -423,6 +432,10 @@ class PostType {
             'editQueriesFrontend' => isset($_POST['comyli_editQueriesFrontend']) ? 1 : 0,
         ];
 
+        $rawCss = isset($_POST['comyli_custom_css']) ? wp_unslash($_POST['comyli_custom_css']) : '';
+        $customCss = trim(preg_replace('/^<\s*style[^>]*>|<\s*\/\s*style\s*>$/i', '', $rawCss));
+        $data['custom_css'] = $customCss;
+
         // Save to individual post meta fields
         foreach ($data as $key => $val) {
             update_post_meta($post_id, '_comyli_' . $key, $val);
@@ -435,6 +448,58 @@ class PostType {
             'post_content' => wp_slash(serialize($data))
         ]);
         add_action('save_post_' . $this->config->plugin['type'], [$this, 'savePost']);
+    }
+
+    public function renderCustomCssBox(\WP_Post $post): void {
+        $customCss = (string)get_post_meta($post->ID, '_comyli_custom_css', true);
+        if ($customCss === '') {
+            $unserialized = maybe_unserialize($post->post_content);
+            if (is_array($unserialized) && !empty($unserialized['custom_css'])) {
+                $customCss = (string)$unserialized['custom_css'];
+            }
+        }
+        ?>
+        <div style="margin-bottom:10px;">
+            <p class="description">
+                Geben Sie hier spezifisches CSS für diese Tabelle ein. Das CSS wird automatisch eingebunden, wenn die Tabelle (oder ein zugehöriger Shortcode/Block) angezeigt wird.
+            </p>
+            <div id="comyli_table_css_editor" style="width:100%; min-height:180px; font-family:monospace; font-size:13px; background:#fff; border:1px solid #ccd0d4; padding:12px; box-sizing:border-box; border-radius:4px; line-height:1.5;"></div>
+            <textarea id="comyli_custom_css" name="comyli_custom_css" style="display:none;"><?php echo esc_textarea($customCss); ?></textarea>
+        </div>
+        <div style="background:#f8fafc; border-left:4px solid #0284c7; padding:8px 12px; font-size:12px; color:#334155;">
+            <strong>Hilfreiche CSS-Selektoren für Tabellendesign:</strong><br>
+            <code>.comyli .td:nth-of-type(2) { width: 150px; }</code> (Spaltenbreite anpassen)<br>
+            <code>.comyli .td:nth-of-type(1) { position: sticky; left: 0; background: inherit; z-index: 6; }</code> (Spalte horizontal fixieren)<br>
+            <code>.comyli .tr:hover { background-color: #f1f5f9; }</code> (Zeilen-Hover hervorheben)<br>
+            <code>#colNames > .td { font-weight: bold; background: #e2e8f0; }</code> (Spaltenüberschriften formatieren)
+        </div>
+        <script>
+        jQuery(document).ready(function($) {
+            const editorEl = document.getElementById('comyli_table_css_editor');
+            const hiddenEl = document.getElementById('comyli_custom_css');
+            if (typeof CodeJar !== 'undefined' && editorEl && hiddenEl) {
+                const highlight = el => {
+                    if (typeof Prism !== 'undefined' && Prism.languages && Prism.languages.css) {
+                        el.innerHTML = Prism.highlight(el.textContent, Prism.languages.css, 'css');
+                    } else {
+                        el.textContent = el.textContent;
+                    }
+                };
+                const jar = CodeJar(editorEl, highlight);
+                jar.updateCode(hiddenEl.value);
+                jar.onUpdate(code => {
+                    hiddenEl.value = code;
+                });
+            } else if (editorEl && hiddenEl) {
+                editorEl.style.display = 'none';
+                hiddenEl.style.display = 'block';
+                hiddenEl.style.width = '100%';
+                hiddenEl.style.minHeight = '180px';
+                hiddenEl.style.fontFamily = 'monospace';
+            }
+        });
+        </script>
+        <?php
     }
 
     public function addMigrationButton($views) {
@@ -466,14 +531,14 @@ class PostType {
 
     public function renderCustomColumn($column, $post_id) {
         if ($column === 'comyli_db') {
-            $useWpDb = get_post_meta($post_id, '_comyli_use_wp_db', true);
-            $useWpDb = ($useWpDb === '' || $useWpDb === '1' || $useWpDb === 1);
+            $cfg = ConnectionManager::resolve_table_config($post_id);
+            $dbServer = (string)($cfg['dbserver'] ?? '');
+            $useWpDb = empty($dbServer) || !empty($cfg['use_wp_db']);
             if ($useWpDb) {
                 echo '<span style="color:#0284c7; font-weight:600;">WordPress-DB</span>';
             } else {
-                $db = get_post_meta($post_id, '_comyli_db', true);
-                $server = get_post_meta($post_id, '_comyli_dbserver', true);
-                echo '<strong>' . esc_html($db ?: 'extern') . '</strong><br><span style="color:#64748b; font-size:11px;">@ ' . esc_html($server) . '</span>';
+                $db = (string)($cfg['db'] ?? '');
+                echo '<strong>' . esc_html($db ?: 'extern') . '</strong><br><span style="color:#64748b; font-size:11px;">@ ' . esc_html($dbServer) . '</span>';
             }
         } elseif ($column === 'comyli_queries_count') {
             $count = count(get_posts([

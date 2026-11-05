@@ -224,6 +224,32 @@ class Shortcode {
             $postId = (int)($config['comyli_id'] ?? 0);
             echo "<script>window.COMYLI_ENV = { restUrl: '" . esc_js($restUrl) . "', nonce: '" . esc_js($nonce) . "', postId: " . $postId . ", atts: " . json_encode($args) . " };</script>";
             echo "<style>body{ overflow: scroll; }</style>";
+
+            // 1. Output Custom CSS from Table
+            $tableCss = '';
+            if ($postId > 0) {
+                $tableCss = (string)get_post_meta($postId, '_comyli_custom_css', true);
+            }
+            if (empty($tableCss) && !empty($config['custom_css'])) {
+                $tableCss = (string)$config['custom_css'];
+            }
+            if (!empty($tableCss)) {
+                $cleanTableCss = trim(preg_replace('/^<\s*style[^>]*>|<\s*\/\s*style\s*>$/i', '', $tableCss));
+                echo "<style id='comyli-custom-css-table-" . $postId . "'>\n" . wp_strip_all_tags($cleanTableCss) . "\n</style>";
+            }
+
+            // 2. Output Custom CSS from Query
+            $queryName = (string)($config['query'] ?? ($config['qry'] ?? ''));
+            if (!empty($queryName)) {
+                $queryPost = QueryManager::find_query_post($queryName);
+                if ($queryPost) {
+                    $queryCss = (string)get_post_meta($queryPost->ID, QueryManager::META_CUSTOM_CSS, true);
+                    if (!empty($queryCss)) {
+                        $cleanQueryCss = trim(preg_replace('/^<\s*style[^>]*>|<\s*\/\s*style\s*>$/i', '', $queryCss));
+                        echo "<style id='comyli-custom-css-query-" . $queryPost->ID . "'>\n" . wp_strip_all_tags($cleanQueryCss) . "\n</style>";
+                    }
+                }
+            }
         }
 
         $config['is_wp'] = true;

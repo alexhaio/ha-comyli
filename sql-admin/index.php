@@ -1726,6 +1726,10 @@ class App {
             if ($css = $this->config->getArray('path')['css'] ?? '') {
                 echo "<link rel='stylesheet' href='" . Security::escapeAttr($css) . "'>";
             }
+            if ($customCss = $this->config->get('custom_css')) {
+                $cleanCss = trim(preg_replace('/^<\s*style[^>]*>|<\s*\/\s*style\s*>$/i', '', (string)$customCss));
+                echo "<style class='comyli-custom-css'>\n" . strip_tags($cleanCss) . "\n</style>";
+            }
             if ($jquery = $this->config->getArray('path')['jquery'] ?? '') {
                 echo "<script src='" . Security::escapeAttr($jquery) . "'></script>";
             }

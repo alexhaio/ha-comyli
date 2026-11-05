@@ -3,7 +3,7 @@ Contributors: mystryx1337, ha
 Tags: mysql, admin, table, reporting, crud, rest-api, gutenberg, chart, cron, export
 Requires at least: 6.0
 Tested up to: 6.7
-Stable tag: 3.1.1
+Stable tag: 3.1.2
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -36,6 +36,11 @@ CoMyLi (Configurable MySQL Light Interface) transforms MySQL databases and SQL q
 4. Add tables or queries via Gutenberg blocks, shortcode `[comyli_table query="MyQuery" layout="clean"]`, or in PHP via `echo comyli_render(['query' => 'MyQuery']);`.
 
 == Changelog ==
+
+= 3.1.2 =
+* Fixed: Accurate database source detection and display in the "Alle Tabellen" admin column (correctly resolving external host vs. local WordPress database).
+* Added: Custom CSS Editor in Table Definition (`comyli`) with syntax highlighting and automatic frontend injection.
+* Added: Custom CSS Editor in Query Editor (`comyli_query`) with syntax highlighting, automatic frontend injection, and full WordPress revision tracking.
 
 = 3.1.1 =
 * Improved: Descriptive CSV filenames taking direct reference to table and query names (e.g. `tabelle_{table}_abfrage_{query}_{date}.csv`).
