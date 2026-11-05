@@ -1730,6 +1730,10 @@ class App {
                 $cleanCss = trim(preg_replace('/^<\s*style[^>]*>|<\s*\/\s*style\s*>$/i', '', (string)$customCss));
                 echo "<style class='comyli-custom-css'>\n" . strip_tags($cleanCss) . "\n</style>";
             }
+            if ($customJs = $this->config->get('custom_js')) {
+                $cleanJs = trim(preg_replace('/^<\s*script[^>]*>|<\s*\/\s*script\s*>$/i', '', (string)$customJs));
+                echo "<script class='comyli-custom-js'>\n" . $cleanJs . "\n</script>";
+            }
             if ($jquery = $this->config->getArray('path')['jquery'] ?? '') {
                 echo "<script src='" . Security::escapeAttr($jquery) . "'></script>";
             }

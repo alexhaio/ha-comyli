@@ -108,6 +108,15 @@ class PostType {
         );
 
         add_meta_box(
+            'comyli_custom_js_meta',
+            'Benutzerdefiniertes JavaScript (Custom JS)',
+            [$this, 'renderCustomJsBox'],
+            $this->config->plugin['type'],
+            'normal',
+            'default'
+        );
+
+        add_meta_box(
             'comyli_info_meta',
             'CoMyLi Info',
             [$this, 'renderInfoBox'],
@@ -436,6 +445,10 @@ class PostType {
         $customCss = trim(preg_replace('/^<\s*style[^>]*>|<\s*\/\s*style\s*>$/i', '', $rawCss));
         $data['custom_css'] = $customCss;
 
+        $rawJs = isset($_POST['comyli_custom_js']) ? wp_unslash($_POST['comyli_custom_js']) : '';
+        $customJs = trim(preg_replace('/^<\s*script[^>]*>|<\s*\/\s*script\s*>$/i', '', $rawJs));
+        $data['custom_js'] = $customJs;
+
         // Save to individual post meta fields
         foreach ($data as $key => $val) {
             update_post_meta($post_id, '_comyli_' . $key, $val);
@@ -481,6 +494,57 @@ class PostType {
                 const highlight = el => {
                     if (typeof Prism !== 'undefined' && Prism.languages && Prism.languages.css) {
                         el.innerHTML = Prism.highlight(el.textContent, Prism.languages.css, 'css');
+                    } else {
+                        el.textContent = el.textContent;
+                    }
+                };
+                const jar = CodeJar(editorEl, highlight);
+                jar.updateCode(hiddenEl.value);
+                jar.onUpdate(code => {
+                    hiddenEl.value = code;
+                });
+            } else if (editorEl && hiddenEl) {
+                editorEl.style.display = 'none';
+                hiddenEl.style.display = 'block';
+                hiddenEl.style.width = '100%';
+                hiddenEl.style.minHeight = '180px';
+                hiddenEl.style.fontFamily = 'monospace';
+            }
+        });
+        </script>
+        <?php
+    }
+
+    public function renderCustomJsBox(\WP_Post $post): void {
+        $customJs = (string)get_post_meta($post->ID, '_comyli_custom_js', true);
+        if ($customJs === '') {
+            $unserialized = maybe_unserialize($post->post_content);
+            if (is_array($unserialized) && !empty($unserialized['custom_js'])) {
+                $customJs = (string)$unserialized['custom_js'];
+            }
+        }
+        ?>
+        <div style="margin-bottom:10px;">
+            <p class="description">
+                Geben Sie hier spezifisches JavaScript für diese Tabelle ein. Das Script wird automatisch ausgeführt, wenn die Tabelle gerendert wird.
+            </p>
+            <div id="comyli_table_js_editor" style="width:100%; min-height:180px; font-family:monospace; font-size:13px; background:#fff; border:1px solid #ccd0d4; padding:12px; box-sizing:border-box; border-radius:4px; line-height:1.5;"></div>
+            <textarea id="comyli_custom_js" name="comyli_custom_js" style="display:none;"><?php echo esc_textarea($customJs); ?></textarea>
+        </div>
+        <div style="background:#f8fafc; border-left:4px solid #f59e0b; padding:8px 12px; font-size:12px; color:#334155;">
+            <strong>JavaScript-Hinweis:</strong><br>
+            Sie können Standard-JavaScript oder jQuery (<code>jQuery(document).ready(function($) { ... })</code>) verwenden.<br>
+            Die Tabellendaten stehen im DOM unter <code>.comyli</code> zur Verfügung.
+        </div>
+        <script>
+        jQuery(document).ready(function($) {
+            const editorEl = document.getElementById('comyli_table_js_editor');
+            const hiddenEl = document.getElementById('comyli_custom_js');
+            if (typeof CodeJar !== 'undefined' && editorEl && hiddenEl) {
+                const highlight = el => {
+                    if (typeof Prism !== 'undefined' && Prism.languages && (Prism.languages.javascript || Prism.languages.js)) {
+                        const lang = Prism.languages.javascript || Prism.languages.js;
+                        el.innerHTML = Prism.highlight(el.textContent, lang, 'javascript');
                     } else {
                         el.textContent = el.textContent;
                     }

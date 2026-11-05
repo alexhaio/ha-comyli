@@ -14,6 +14,7 @@ class QueryManager {
     public const META_CATEGORY = '_comyli_category';
     public const META_TABLE_ID = '_comyli_table_id';
     public const META_CUSTOM_CSS = '_comyli_custom_css';
+    public const META_CUSTOM_JS = '_comyli_custom_js';
 
     private Config $config;
 
@@ -131,7 +132,17 @@ class QueryManager {
             'default'
         );
 
-        // 5. Info & Shortcode / Block
+        // 5. Custom JS
+        add_meta_box(
+            'comyli_query_custom_js_box',
+            'Benutzerdefiniertes JavaScript (Custom JS für diese Abfrage)',
+            [$this, 'renderCustomJsBox'],
+            self::POST_TYPE,
+            'normal',
+            'default'
+        );
+
+        // 6. Info & Shortcode / Block
         add_meta_box(
             'comyli_query_usage_box',
             'Verwendung & Integration',
@@ -433,6 +444,51 @@ class QueryManager {
         <?php
     }
 
+    public function renderCustomJsBox(\WP_Post $post): void {
+        $customJs = (string)get_post_meta($post->ID, self::META_CUSTOM_JS, true);
+        ?>
+        <div style="margin-bottom:10px;">
+            <p class="description">
+                Geben Sie hier spezifisches JavaScript für diese Abfrage ein. Das Script wird automatisch ausgeführt, wenn diese Abfrage gerendert wird.
+            </p>
+            <div id="comyli_query_js_editor" style="width:100%; min-height:180px; font-family:monospace; font-size:13px; background:#fff; border:1px solid #ccd0d4; padding:12px; box-sizing:border-box; border-radius:4px; line-height:1.5;"></div>
+            <textarea id="comyli_query_custom_js" name="comyli_query_custom_js" style="display:none;"><?php echo esc_textarea($customJs); ?></textarea>
+        </div>
+        <div style="background:#f8fafc; border-left:4px solid #f59e0b; padding:8px 12px; font-size:12px; color:#334155;">
+            <strong>JavaScript-Hinweis:</strong><br>
+            Sie können Standard-JavaScript oder jQuery (<code>jQuery(document).ready(function($) { ... })</code>) verwenden.<br>
+            Die Abfrageergebnisse stehen im DOM unter <code>.comyli</code> zur Verfügung.
+        </div>
+        <script>
+        jQuery(document).ready(function($) {
+            const editorEl = document.getElementById('comyli_query_js_editor');
+            const hiddenEl = document.getElementById('comyli_query_custom_js');
+            if (typeof CodeJar !== 'undefined' && editorEl && hiddenEl) {
+                const highlight = el => {
+                    if (typeof Prism !== 'undefined' && Prism.languages && (Prism.languages.javascript || Prism.languages.js)) {
+                        const lang = Prism.languages.javascript || Prism.languages.js;
+                        el.innerHTML = Prism.highlight(el.textContent, lang, 'javascript');
+                    } else {
+                        el.textContent = el.textContent;
+                    }
+                };
+                const jar = CodeJar(editorEl, highlight);
+                jar.updateCode(hiddenEl.value);
+                jar.onUpdate(code => {
+                    hiddenEl.value = code;
+                });
+            } else if (editorEl && hiddenEl) {
+                editorEl.style.display = 'none';
+                hiddenEl.style.display = 'block';
+                hiddenEl.style.width = '100%';
+                hiddenEl.style.minHeight = '180px';
+                hiddenEl.style.fontFamily = 'monospace';
+            }
+        });
+        </script>
+        <?php
+    }
+
     public function renderUsageBox(\WP_Post $post): void {
         $slug = $post->post_name ?: sanitize_title($post->post_title ?: 'abfrage-' . $post->ID);
         $shortcode = '[comyli_table query="' . $slug . '" layout="clean"]';
@@ -578,6 +634,12 @@ class QueryManager {
             $rawCss = wp_unslash($_POST['comyli_query_custom_css']);
             $css = trim(preg_replace('/^<\s*style[^>]*>|<\s*\/\s*style\s*>$/i', '', $rawCss));
             update_post_meta($post_id, self::META_CUSTOM_CSS, $css);
+        }
+
+        if (isset($_POST['comyli_query_custom_js'])) {
+            $rawJs = wp_unslash($_POST['comyli_query_custom_js']);
+            $js = trim(preg_replace('/^<\s*script[^>]*>|<\s*\/\s*script\s*>$/i', '', $rawJs));
+            update_post_meta($post_id, self::META_CUSTOM_JS, $js);
         }
         
         // Associated table / external DB
@@ -774,6 +836,7 @@ class QueryManager {
         $keys[] = self::META_CAPABILITY;
         $keys[] = self::META_DESCRIPTION;
         $keys[] = self::META_CUSTOM_CSS;
+        $keys[] = self::META_CUSTOM_JS;
         return $keys;
     }
 
@@ -786,7 +849,7 @@ class QueryManager {
             return;
         }
 
-        $metaKeys = [self::META_TABLE_ID, self::META_CAPABILITY, self::META_DESCRIPTION, self::META_CUSTOM_CSS];
+        $metaKeys = [self::META_TABLE_ID, self::META_CAPABILITY, self::META_DESCRIPTION, self::META_CUSTOM_CSS, self::META_CUSTOM_JS];
         foreach ($metaKeys as $metaKey) {
             $metaVal = get_metadata('post', $revisionId, $metaKey, true);
             if ($metaVal !== false && $metaVal !== '') {
