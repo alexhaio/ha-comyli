@@ -448,19 +448,53 @@ class FieldHandler {
         }
 
         if (empty($qry)) {
-            $baseDir = rtrim($config->get('queries'), '/\\') . '/';
+            $queriesCfg = (string)$config->get('queries', '');
+            if (class_exists('\\ha\\CoMyLi\\QueryManager')) {
+                $baseDir = \ha\CoMyLi\QueryManager::resolve_queries_dir($queriesCfg, $cleanQryName);
+            } else {
+                $baseDir = (!empty($queriesCfg) ? rtrim(str_replace('\\', '/', $queriesCfg), '/') : __DIR__ . '/queries') . '/';
+            }
+
             $path = $baseDir . $cleanQryName . '.sql';
             if (!file_exists($path)) {
-                // Check in subdirectories if not found directly at root
-                $found = glob($baseDir . '*/' . $cleanQryName . '.sql');
-                if (!empty($found)) {
-                    $path = $found[0];
-                } else {
-                    return '';
+                // Check if mapped in QueryManager file scan
+                if (class_exists('\\ha\\CoMyLi\\QueryManager')) {
+                    $filesMap = \ha\CoMyLi\QueryManager::find_sql_files($baseDir);
+                    if (isset($filesMap[$cleanQryName])) {
+                        $path = $filesMap[$cleanQryName];
+                    }
                 }
             }
-            $qry = file_get_contents($path);
-            if ($qry === false) {
+
+            if (!file_exists($path)) {
+                // Check in subdirectories or uppercase extension
+                $found = glob($baseDir . '*/' . $cleanQryName . '.sql') 
+                    ?: (glob($baseDir . '*/*/' . $cleanQryName . '.sql') 
+                    ?: (glob($baseDir . $cleanQryName . '.SQL') ?: []));
+                if (!empty($found)) {
+                    $path = $found[0];
+                }
+            }
+
+            // Fallback: check standard wp-content/comyli-queries if available
+            if (!file_exists($path) && defined('WP_CONTENT_DIR')) {
+                $contentQueriesDir = rtrim(str_replace('\\', '/', WP_CONTENT_DIR), '/') . '/comyli-queries/';
+                if (file_exists($contentQueriesDir . $cleanQryName . '.sql')) {
+                    $path = $contentQueriesDir . $cleanQryName . '.sql';
+                } else {
+                    $foundContent = glob($contentQueriesDir . '*/' . $cleanQryName . '.sql');
+                    if (!empty($foundContent)) {
+                        $path = $foundContent[0];
+                    }
+                }
+            }
+
+            if (file_exists($path)) {
+                $qry = file_get_contents($path);
+                if ($qry === false) {
+                    return '';
+                }
+            } else {
                 return '';
             }
         }
@@ -1692,9 +1726,22 @@ class App {
         }
         if ($raw === '') return '';
         $decoded = Security::base64urlDecode($raw);
-        $baseDir = rtrim($this->config->get('queries'), '/\\') . '/';
-        $files = glob($baseDir . '*.sql') ?: [];
-        $queries = array_map(function($f) { return basename($f, '.sql'); }, $files);
+        $queriesCfg = (string)$this->config->get('queries', '');
+
+        if (class_exists('\\ha\\CoMyLi\\QueryManager')) {
+            $baseDir = \ha\CoMyLi\QueryManager::resolve_queries_dir($queriesCfg);
+            $filesMap = \ha\CoMyLi\QueryManager::find_sql_files($baseDir);
+            $queries = array_keys($filesMap);
+        } else {
+            $baseDir = (!empty($queriesCfg) ? rtrim(str_replace('\\', '/', $queriesCfg), '/') : __DIR__ . '/queries') . '/';
+            $files = array_merge(glob($baseDir . '*.sql') ?: [], glob($baseDir . '*/*.sql') ?: []);
+            $queries = array_map(function($f) { return basename($f, '.sql'); }, $files);
+            foreach ($files as $f) {
+                $rel = str_replace([$baseDir, '\\'], ['', '/'], $f);
+                $queries[] = preg_replace('/\.sql$/i', '', $rel);
+            }
+        }
+
         if (in_array($decoded, $queries)) return $decoded;
         if (in_array($raw, $queries)) return $raw;
         return $raw ?: $decoded;
@@ -1826,8 +1873,21 @@ class App {
             }
 
             if ($this->config->get('listQueries')) {
-                $queriesDir = $this->config->get('queries');
-                $files = (!empty($queriesDir) && is_dir($queriesDir)) ? glob(rtrim($queriesDir, '/\\') . '/*.sql') : [];
+                $queriesCfg = (string)$this->config->get('queries', '');
+                $filesMap = [];
+                if (class_exists('\\ha\\CoMyLi\\QueryManager')) {
+                    $queriesDir = \ha\CoMyLi\QueryManager::resolve_queries_dir($queriesCfg);
+                    $filesMap = \ha\CoMyLi\QueryManager::find_sql_files($queriesDir);
+                } else {
+                    $queriesDir = (!empty($queriesCfg) ? rtrim(str_replace('\\', '/', $queriesCfg), '/') : __DIR__ . '/queries') . '/';
+                    if (is_dir($queriesDir)) {
+                        $files = array_merge(glob($queriesDir . '*.sql') ?: [], glob($queriesDir . '*/*.sql') ?: []);
+                        foreach ($files as $f) {
+                            $base = basename($f, '.sql');
+                            $filesMap[$base] = $f;
+                        }
+                    }
+                }
                 $activeQry = $this->getRequestedQuery();
                 $allQueries = [];
 
@@ -1846,7 +1906,7 @@ class App {
                     $cptQueries = get_posts($args);
                 }
 
-                if (!empty($files) || !empty($cptQueries)) {
+                if (!empty($filesMap) || !empty($cptQueries)) {
                     echo "<div class='comyli-sidebar-section'>";
                     echo "<h4 class='comyli-sidebar-title'>Abfragen</h4>";
                     echo "<div class='comyli-nav-list'>";
@@ -1865,22 +1925,21 @@ class App {
                         }
                     }
 
-                    if (!empty($files)) {
-                        foreach ($files as $f) {
-                            $base = basename($f, '.sql');
-                            if (class_exists('\\ha\\CoMyLi\\Permissions') && !\ha\CoMyLi\Permissions::can_view_query($base)) {
+                    if (!empty($filesMap)) {
+                        foreach ($filesMap as $queryIdentifier => $f) {
+                            if (class_exists('\\ha\\CoMyLi\\Permissions') && !\ha\CoMyLi\Permissions::can_view_query($queryIdentifier)) {
                                 continue;
                             }
-                            $url = "?" . Security::base64urlEncode('qry') . "=" . Security::base64urlEncode($base);
-                            $active = ($activeQry === $base) ? 'active' : '';
+                            $url = "?" . Security::base64urlEncode('qry') . "=" . Security::base64urlEncode($queryIdentifier);
+                            $active = ($activeQry === $queryIdentifier || $activeQry === basename($f, '.sql')) ? 'active' : '';
                             
                             echo "<div class='comyli-nav-item $active'>";
-                            echo "<a href='$url' class='comyli-nav-link'>📁 " . Security::escapeHtml($base) . "</a>";
+                            echo "<a href='$url' class='comyli-nav-link'>📁 " . Security::escapeHtml($queryIdentifier) . "</a>";
                             
                             if ($this->config->get('edit') && $this->config->get('editQueriesFrontend')) {
                                 $code = file_get_contents($f);
-                                $allQueries[$base] = $code;
-                                echo "<button type='button' class='comyli-edit-qry-btn' data-qry='" . Security::escapeAttr($base) . "' title='Bearbeiten'>&#9998;</button>";
+                                $allQueries[$queryIdentifier] = $code;
+                                echo "<button type='button' class='comyli-edit-qry-btn' data-qry='" . Security::escapeAttr($queryIdentifier) . "' title='Bearbeiten'>&#9998;</button>";
                             }
                             echo "</div>";
                         }

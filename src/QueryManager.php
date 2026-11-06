@@ -896,4 +896,213 @@ class QueryManager {
 
         return null;
     }
+
+    /**
+     * Returns the default queries storage path in wp-content.
+     *
+     * @param string|null $slug Optional table or config slug/identifier.
+     * @param bool $relative If true, returns a clean relative path (e.g. 'wp-content/comyli-queries/slug/').
+     * @return string
+     */
+    public static function get_default_queries_dir(?string $slug = null, bool $relative = false): string {
+        $cleanSlug = $slug ? trim($slug, '/\\ ') : '';
+        $sub = $cleanSlug !== '' ? $cleanSlug . '/' : '';
+
+        if ($relative) {
+            return 'wp-content/comyli-queries/' . $sub;
+        }
+
+        $contentDir = defined('WP_CONTENT_DIR')
+            ? WP_CONTENT_DIR
+            : (defined('ABSPATH') ? ABSPATH . 'wp-content' : dirname(__DIR__, 2));
+
+        return rtrim(str_replace('\\', '/', $contentDir), '/') . '/comyli-queries/' . $sub;
+    }
+
+    /**
+     * Resolves and normalizes any configured queries directory path into a canonical absolute filesystem path.
+     *
+     * @param string|null $path Configured path (relative or absolute).
+     * @param string|null $slug Optional table or config slug/identifier.
+     * @return string Normalized absolute path with trailing slash.
+     */
+    public static function resolve_queries_dir(?string $path = null, ?string $slug = null): string {
+        $path = $path ? trim($path) : '';
+        $cleanSlug = $slug ? trim($slug, '/\\ ') : '';
+
+        $contentDir = defined('WP_CONTENT_DIR')
+            ? WP_CONTENT_DIR
+            : (defined('ABSPATH') ? ABSPATH . 'wp-content' : dirname(__DIR__, 2));
+        $contentDir = rtrim(str_replace('\\', '/', $contentDir), '/');
+        $pluginDir = rtrim(str_replace('\\', '/', dirname(__DIR__)), '/');
+
+        // 1. Path is explicitly provided
+        if ($path !== '') {
+            $normalized = str_replace('\\', '/', $path);
+
+            // Absolute path: Windows drive (C:/...), Unix absolute (/...), or UNC (//...)
+            $isAbsolute = (bool)preg_match('#^([a-zA-Z]:/|//|/)#', $normalized);
+            if ($isAbsolute) {
+                return rtrim($normalized, '/') . '/';
+            }
+
+            // Strip leading ./ or /
+            $rel = ltrim($normalized, './');
+
+            // Starts with wp-content/
+            if (str_starts_with($rel, 'wp-content/')) {
+                $sub = substr($rel, 11);
+                return $contentDir . '/' . ltrim($sub, '/\\ ') . '/';
+            }
+
+            // Starts with ../wp-content/
+            if (str_starts_with($rel, '../wp-content/')) {
+                $sub = substr($rel, 14);
+                return $contentDir . '/' . ltrim($sub, '/\\ ') . '/';
+            }
+
+            // Check if relative to ABSPATH
+            if (defined('ABSPATH')) {
+                $abs = rtrim(str_replace('\\', '/', ABSPATH), '/') . '/' . $rel;
+                if (is_dir($abs)) {
+                    return rtrim($abs, '/') . '/';
+                }
+            }
+
+            // Check if relative to WP_CONTENT_DIR / comyli-queries
+            $inContentQueries = $contentDir . '/comyli-queries/' . $rel;
+            if (is_dir($inContentQueries)) {
+                return rtrim($inContentQueries, '/') . '/';
+            }
+
+            // Check if relative to plugin path
+            $inPlugin = $pluginDir . '/' . $rel;
+            if (is_dir($inPlugin)) {
+                return rtrim($inPlugin, '/') . '/';
+            }
+
+            // Fallback: resolve against ABSPATH or WP_CONTENT_DIR
+            if (defined('ABSPATH')) {
+                return rtrim(str_replace('\\', '/', ABSPATH), '/') . '/' . $rel . '/';
+            }
+            return $contentDir . '/' . $rel . '/';
+        }
+
+        // 2. Path is empty: search standard locations
+        // A. wp-content/comyli-queries/{slug}/
+        if ($cleanSlug !== '') {
+            $candidateSlug = $contentDir . '/comyli-queries/' . $cleanSlug . '/';
+            if (is_dir($candidateSlug)) {
+                return $candidateSlug;
+            }
+        }
+
+        // B. wp-content/comyli-queries/
+        $candidateBase = $contentDir . '/comyli-queries/';
+        if (is_dir($candidateBase)) {
+            return $candidateBase;
+        }
+
+        // C. Legacy plugin directory queries/{slug}/
+        if ($cleanSlug !== '') {
+            $legacySlug = $pluginDir . '/queries/' . $cleanSlug . '/';
+            if (is_dir($legacySlug)) {
+                return $legacySlug;
+            }
+        }
+
+        // D. Legacy plugin directory queries/
+        $legacyBase = $pluginDir . '/queries/';
+        if (is_dir($legacyBase)) {
+            return $legacyBase;
+        }
+
+        // Default target if none exist yet:
+        return $cleanSlug !== '' ? $candidateSlug : $candidateBase;
+    }
+
+    /**
+     * Ensures the query directory exists and is secured against direct web downloads.
+     *
+     * @param string $absPath Absolute directory path.
+     * @return bool True if directory exists or was created successfully.
+     */
+    public static function ensure_queries_dir(string $absPath): bool {
+        $absPath = rtrim(str_replace('\\', '/', $absPath), '/');
+        if (!is_dir($absPath)) {
+            if (function_exists('wp_mkdir_p')) {
+                wp_mkdir_p($absPath);
+            } else {
+                @mkdir($absPath, 0755, true);
+            }
+        }
+
+        if (!is_dir($absPath)) {
+            return false;
+        }
+
+        // Secure with index.php and .htaccess against direct HTTP downloads
+        $htaccess = $absPath . '/.htaccess';
+        if (!file_exists($htaccess)) {
+            @file_put_contents($htaccess, "Order Deny,Allow\nDeny from all\n<IfModule mod_authz_core.c>\nRequire all denied\n</IfModule>\n");
+        }
+        $indexPhp = $absPath . '/index.php';
+        if (!file_exists($indexPhp)) {
+            @file_put_contents($indexPhp, "<?php\n// Silence is golden.\n");
+        }
+
+        // Also secure parent wp-content/comyli-queries if inside it
+        $parent = dirname($absPath);
+        if (basename($parent) === 'comyli-queries') {
+            if (!file_exists($parent . '/.htaccess')) {
+                @file_put_contents($parent . '/.htaccess', "Order Deny,Allow\nDeny from all\n<IfModule mod_authz_core.c>\nRequire all denied\n</IfModule>\n");
+            }
+            if (!file_exists($parent . '/index.php')) {
+                @file_put_contents($parent . '/index.php', "<?php\n// Silence is golden.\n");
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Scans a directory (and immediate subdirectories) for .sql files.
+     *
+     * @param string $absQueriesDir Absolute directory path.
+     * @return array<string, string> Array of [query_identifier => absolute_file_path].
+     */
+    public static function find_sql_files(string $absQueriesDir): array {
+        $dir = rtrim(str_replace('\\', '/', $absQueriesDir), '/');
+        if (!is_dir($dir)) {
+            return [];
+        }
+
+        $result = [];
+
+        // 1. Root files (*.sql and *.SQL)
+        $rootFiles = array_merge(glob($dir . '/*.sql') ?: [], glob($dir . '/*.SQL') ?: []);
+        foreach ($rootFiles as $f) {
+            $fNorm = str_replace('\\', '/', $f);
+            $base = basename($fNorm);
+            $name = preg_replace('/\.sql$/i', '', $base);
+            $result[$name] = $fNorm;
+        }
+
+        // 2. Subdirectories (*/*.sql and */*.SQL)
+        $subFiles = array_merge(glob($dir . '/*/*.sql') ?: [], glob($dir . '/*/*.SQL') ?: []);
+        foreach ($subFiles as $f) {
+            $fNorm = str_replace('\\', '/', $f);
+            $base = basename($fNorm);
+            $name = preg_replace('/\.sql$/i', '', $base);
+            $rel = str_replace($dir . '/', '', $fNorm);
+            $relName = preg_replace('/\.sql$/i', '', $rel);
+
+            if (!isset($result[$name])) {
+                $result[$name] = $fNorm;
+            }
+            $result[$relName] = $fNorm;
+        }
+
+        return $result;
+    }
 }

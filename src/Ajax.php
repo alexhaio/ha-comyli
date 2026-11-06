@@ -27,7 +27,10 @@ class Ajax {
         $postConfig = $resolved ?: [];
         $config = array_merge($this->pluginConfig->plugin, $postConfig);
         
-        $config['queries'] = '../wp-content/plugins/ha-comyli/queries/';
+        $slug = $config['post_name'] ?? ($config['table'] ?? '');
+        $config['queries'] = class_exists(QueryManager::class)
+            ? QueryManager::resolve_queries_dir($config['queries'] ?? '', $slug)
+            : '../wp-content/plugins/ha-comyli/queries/';
         
         $tablesStr = isset($config['tables']) ? (string)$config['tables'] : '';
         $config['tables'] = explode(',', $tablesStr);

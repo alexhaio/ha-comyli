@@ -122,19 +122,32 @@ class Blocks {
             '3.1.0'
         );
 
-        // 1. Discover file-based queries
-        $queriesDir = $path . '/queries/';
+        // 1. Discover file-based queries from wp-content/comyli-queries/ and legacy plugin folder
         $queryList = [];
+        if (class_exists(QueryManager::class)) {
+            $contentQueriesDir = QueryManager::resolve_queries_dir();
+            $filesMap = QueryManager::find_sql_files($contentQueriesDir);
+            foreach ($filesMap as $name => $f) {
+                $queryList[$name] = [
+                    'value' => $name,
+                    'label' => '📁 ' . $name . '.sql',
+                ];
+            }
+        }
+
+        $queriesDir = $path . '/queries/';
         if (is_dir($queriesDir)) {
             $files = glob($queriesDir . '*.sql') ?: [];
             $subFiles = glob($queriesDir . '*/*.sql') ?: [];
             foreach (array_merge($files, $subFiles) as $f) {
                 $base = basename($f, '.sql');
-                $rel = str_replace([$queriesDir, '\\'], ['', '/'], $f);
-                $queryList[$base] = [
-                    'value' => $base,
-                    'label' => '📁 ' . $rel,
-                ];
+                if (!isset($queryList[$base])) {
+                    $rel = str_replace([$queriesDir, '\\'], ['', '/'], $f);
+                    $queryList[$base] = [
+                        'value' => $base,
+                        'label' => '📁 ' . $rel,
+                    ];
+                }
             }
         }
 
@@ -252,7 +265,9 @@ class Blocks {
         $sql = '';
         if (!empty($query)) {
             $cfg = $this->config->plugin;
-            $cfg['queries'] = $this->config->plugin['path'] . '/queries/';
+            $cfg['queries'] = class_exists(QueryManager::class)
+                ? QueryManager::resolve_queries_dir($cfg['queries'] ?? '', $query)
+                : $this->config->plugin['path'] . '/queries/';
             $configHandler = new \Comyli\Standalone\ConfigHandler($cfg);
             $sql = \Comyli\Standalone\FieldHandler::resolveSQL($query, $configHandler);
         } elseif (!empty($table)) {
@@ -389,7 +404,9 @@ class Blocks {
         if (!empty($query)) {
             require_once $this->config->plugin['path'] . '/sql-admin/index.php';
             $cfg = $this->config->plugin;
-            $cfg['queries'] = $this->config->plugin['path'] . '/queries/';
+            $cfg['queries'] = class_exists(QueryManager::class)
+                ? QueryManager::resolve_queries_dir($cfg['queries'] ?? '', $query)
+                : $this->config->plugin['path'] . '/queries/';
             $configHandler = new \Comyli\Standalone\ConfigHandler($cfg);
             $sql = \Comyli\Standalone\FieldHandler::resolveSQL($query, $configHandler);
         } elseif (!empty($table)) {

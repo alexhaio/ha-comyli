@@ -215,25 +215,24 @@ class PostType {
             $queriesFolder = maybe_unserialize($meta) ?: '';
         }
 
-        if (empty($queriesFolder)) {
-            echo "<p style='color:#64748b;'><em>Optional: Geben Sie unten in der Konfiguration einen Abfragen-Ordner an, falls Sie zusätzlich .sql-Dateien vom Dateisystem nutzen möchten.</em></p>";
-            return;
-        }
+        $slug = $post->post_name ?: 'config-' . $post->ID;
+        $absFolder = QueryManager::resolve_queries_dir($queriesFolder, $slug);
+        $defaultRel = QueryManager::get_default_queries_dir($slug, true);
+        $displayPath = !empty($queriesFolder) ? $queriesFolder : $defaultRel;
 
-        $absFolder = rtrim(ABSPATH, '/\\') . '/' . ltrim($queriesFolder, './\\');
-        
         if (!is_dir($absFolder)) {
-            echo "<p style='color:#64748b;'>Der Ordner <code>" . esc_html($queriesFolder) . "</code> existiert noch nicht auf dem Server.</p>";
+            echo "<p style='color:#64748b;'>Der Abfragen-Ordner <code>" . esc_html($displayPath) . "</code> existiert noch nicht auf dem Server.<br>Klicken Sie unten auf <strong>Ordner anlegen</strong> oder kopieren Sie Ihre <code>.sql</code>-Dateien in diesen Pfad.</p>";
             return;
         }
 
-        $files = glob($absFolder . '/*.sql');
+        $filesMap = QueryManager::find_sql_files($absFolder);
         $queryContents = [];
-        if ($files) {
-            foreach ($files as $f) {
-                $base = basename($f, '.sql');
-                $queryContents[$base] = file_get_contents($f);
-            }
+        foreach ($filesMap as $name => $fPath) {
+            $queryContents[$name] = file_get_contents($fPath) ?: '';
+        }
+
+        if (empty($queryContents)) {
+            echo "<p style='color:#64748b;'>Aktiver Ordner: <code>" . esc_html($displayPath) . "</code> (Ordner ist bereit, enthält aber noch keine <code>.sql</code>-Dateien).</p>";
         }
         
         echo '<div style="margin-bottom:15px;">';
@@ -339,12 +338,12 @@ class PostType {
         
         $queriesVal = $data['queries'] ?? '';
         $slug = $post->post_name ?: 'config-' . $post->ID;
-        $examplePath = './wp-content/plugins/ha-comyli/queries/' . $slug . '/';
+        $defaultRelPath = QueryManager::get_default_queries_dir($slug, true);
         
         echo "<tr><th scope='row'><label for='comyli_queries'>Abfragen-Ordner (Pfad)</label></th><td>";
-        echo "<input type='text' id='comyli_queries' name='comyli_queries' value='" . esc_attr($queriesVal) . "' placeholder='" . esc_attr($examplePath) . "' class='regular-text' style='margin-right:10px;'>";
+        echo "<input type='text' id='comyli_queries' name='comyli_queries' value='" . esc_attr($queriesVal) . "' placeholder='" . esc_attr($defaultRelPath) . "' class='regular-text' style='margin-right:10px;'>";
         echo "<button type='submit' name='comyli_create_queries' value='1' class='button'>Ordner anlegen</button>";
-        echo "<p class='description'>Optionaler Pfad für .sql Abfragen auf dem Dateisystem.</p>";
+        echo "<p class='description'>Standardmä&szlig;ig in <code>wp-content</code>: <code>" . esc_html($defaultRelPath) . "</code> (bleibt bei Plugin-Updates erhalten). Bei leerem Feld wird dieser Ordner automatisch verwendet.</p>";
         echo "</td></tr>";
         
         echo "</tbody></table>";
@@ -396,26 +395,27 @@ class PostType {
             $slug = $post->post_name;
             if (empty($slug)) $slug = 'config-' . $post_id;
             
-            $dir = plugin_dir_path(__DIR__) . 'queries/' . $slug . '/';
-            if (!file_exists($dir)) {
-                wp_mkdir_p($dir);
-            }
-            $_POST['comyli_queries'] = './wp-content/plugins/ha-comyli/queries/' . $slug . '/';
+            $targetRel = QueryManager::get_default_queries_dir($slug, true);
+            $targetAbs = QueryManager::resolve_queries_dir($targetRel, $slug);
+            QueryManager::ensure_queries_dir($targetAbs);
+            $_POST['comyli_queries'] = $targetRel;
         }
 
         if (!empty($_POST['comyli_query_save']) || !empty($_POST['comyli_query_delete'])) {
             $qName = sanitize_file_name($_POST['comyli_query_name'] ?? '');
             $qCode = wp_unslash($_POST['comyli_query_code'] ?? '');
             $qFolder = sanitize_text_field($_POST['comyli_queries'] ?? '');
-            if (!empty($qName) && !empty($qFolder)) {
-                $absFolder = rtrim(ABSPATH, '/\\') . '/' . ltrim($qFolder, './\\');
-                if (file_exists($absFolder) && is_dir($absFolder)) {
-                    $fPath = $absFolder . '/' . $qName . '.sql';
-                    if (!empty($_POST['comyli_query_save'])) {
-                        file_put_contents($fPath, $qCode);
-                    } elseif (!empty($_POST['comyli_query_delete']) && file_exists($fPath)) {
-                        unlink($fPath);
-                    }
+            $post = get_post($post_id);
+            $slug = $post ? $post->post_name : 'config-' . $post_id;
+            $absFolder = QueryManager::resolve_queries_dir($qFolder, $slug);
+            
+            if (!empty($qName) && is_dir($absFolder)) {
+                $fPath = rtrim($absFolder, '/') . '/' . $qName . '.sql';
+                if (!empty($_POST['comyli_query_save'])) {
+                    QueryManager::ensure_queries_dir($absFolder);
+                    file_put_contents($fPath, $qCode);
+                } elseif (!empty($_POST['comyli_query_delete']) && file_exists($fPath)) {
+                    unlink($fPath);
                 }
             }
         }

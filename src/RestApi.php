@@ -217,7 +217,9 @@ class RestApi {
         require_once dirname(__DIR__) . '/sql-admin/index.php';
 
         $config = $this->pluginConfig->plugin;
-        $config['queries'] = $this->pluginConfig->plugin['path'] . '/queries/';
+        $config['queries'] = class_exists(QueryManager::class)
+            ? QueryManager::resolve_queries_dir($config['queries'] ?? '', $name)
+            : $this->pluginConfig->plugin['path'] . '/queries/';
         $config['params'] = $request->get_params();
 
         try {
