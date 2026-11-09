@@ -22,13 +22,15 @@ class QueryScheduler {
     public function register(): void {
         add_filter('cron_schedules', [$this, 'addCronIntervals']);
         add_action(self::CRON_HOOK, [$this, 'processScheduledQueries']);
+        add_action('init', [$this, 'ensureCronScheduled']);
 
         // Admin actions
         add_action('admin_post_comyli_download_archive', [$this, 'handleDownloadArchive']);
         add_action('admin_post_comyli_run_archive_now', [$this, 'handleManualRunArchive']);
         add_action('admin_post_comyli_delete_archive', [$this, 'handleDeleteArchive']);
+    }
 
-        // Schedule master runner if not already scheduled
+    public function ensureCronScheduled(): void {
         if (!wp_next_scheduled(self::CRON_HOOK)) {
             wp_schedule_event(time(), 'hourly', self::CRON_HOOK);
         }
@@ -126,17 +128,18 @@ class QueryScheduler {
             return ['success' => false, 'message' => 'Kein SQL-Abfragecode hinterlegt.'];
         }
 
-        // Resolve dynamic context parameters
-        require_once $this->config->plugin['path'] . '/sql-admin/index.php';
-        $cfg = $this->config->plugin;
-        $configHandler = new \Comyli\Standalone\ConfigHandler($cfg);
-        $resolvedSql = \Comyli\Standalone\FieldHandler::resolveParameters($sql, $configHandler);
-
         try {
             $conn = ConnectionManager::get_connection_for_query($queryId);
         } catch (\Exception $e) {
             return ['success' => false, 'message' => 'Datenbankfehler: ' . $e->getMessage()];
         }
+
+        // Resolve dynamic context parameters
+        require_once $this->config->plugin['path'] . '/sql-admin/index.php';
+        $cfg = $this->config->plugin;
+        $cfg['mysqli'] = $conn;
+        $configHandler = new \Comyli\Standalone\ConfigHandler($cfg);
+        $resolvedSql = rtrim(trim(\Comyli\Standalone\FieldHandler::resolveParameters($sql, $configHandler)), "; \t\n\r\0\x0B");
 
         $res = @$conn->query($resolvedSql);
         if (!$res || !($res instanceof \mysqli_result)) {
@@ -341,7 +344,7 @@ class QueryScheduler {
     public function handleDeleteArchive(): void {
         $queryId   = (int)($_POST['query_id'] ?? 0);
         $archiveId = sanitize_text_field($_POST['archive_id'] ?? '');
-        check_admin_referer('comyli_delete_archive_' . $archiveId);
+        check_admin_referer('comyli_delete_archive_' . $queryId);
 
         if (!current_user_can('edit_post', $queryId)) {
             wp_die('Keine Berechtigung.');

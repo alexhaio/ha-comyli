@@ -567,15 +567,17 @@ class PostType {
     }
 
     public function addMigrationButton($views) {
-        $views['comyli-migrate'] = '<a href="' . esc_url(add_query_arg(['comyli_migrate' => '1'])) . '" class="button">Alte Konfigurationen migrieren</a>';
+        $url = wp_nonce_url(add_query_arg(['comyli_migrate' => '1']), 'comyli_migrate_configs');
+        $views['comyli-migrate'] = '<a href="' . esc_url($url) . '" class="button">Alte Konfigurationen migrieren</a>';
         return $views;
     }
 
     public function handleMigration() {
         if (isset($_GET['comyli_migrate']) && $_GET['comyli_migrate'] === '1' && current_user_can('manage_options')) {
+            check_admin_referer('comyli_migrate_configs');
             $migrator = new LegacySpecifics($this->config);
             $migrator->migrateConfigs();
-            wp_redirect(remove_query_arg('comyli_migrate'));
+            wp_safe_redirect(remove_query_arg(['comyli_migrate', '_wpnonce']));
             exit;
         }
     }

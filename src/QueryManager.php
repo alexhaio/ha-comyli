@@ -393,7 +393,7 @@ class QueryManager {
             <input type="hidden" name="action" value="comyli_delete_archive">
             <input type="hidden" name="query_id" value="<?php echo esc_attr($post->ID); ?>">
             <input type="hidden" id="comyli_delete_arc_id" name="archive_id" value="">
-            <?php wp_nonce_field('comyli_delete_archive_' . ($archives[0]['id'] ?? 'none')); ?>
+            <?php wp_nonce_field('comyli_delete_archive_' . $post->ID); ?>
         </form>
         <?php
     }

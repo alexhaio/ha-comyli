@@ -55,7 +55,8 @@ class Security {
     }
 
     public static function base64urlDecode(string $data): string {
-        return base64_decode(str_pad(strtr($data, '-_', '+/'), strlen($data) % 4, '=', STR_PAD_RIGHT));
+        $padLen = (4 - (strlen($data) % 4)) % 4;
+        return (string)base64_decode(strtr($data, '-_', '+/') . str_repeat('=', $padLen));
     }
     
     public static function unslash($value) {
@@ -514,7 +515,7 @@ class FieldHandler {
         // Resolve dynamic context parameters and tokens
         $qry = self::resolveParameters($qry, $config);
 
-        return $qry;
+        return rtrim(trim($qry), "; \t\n\r\0\x0B");
     }
 }
 
@@ -1345,7 +1346,7 @@ class ActionHandler {
         foreach ($fields as $field) {
             $name = $field['name'];
             $isPrimary = $field['flag']['primary'] ?? false;
-            if ($isPrimary && isset($postData['prim' . $name]) && isset($postData[$name])) {
+            if ($isPrimary && isset($postData['prim' . $name])) {
                 $primaryKeys[] = "`$name` = ?";
                 $primaryParams[] = $postData['prim' . $name];
             }
@@ -1537,7 +1538,7 @@ class App {
             }
         }
         // Handle POST Actions
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($table) && !$isQuery) {
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($table) && !$isQuery && $this->config->get('edit')) {
             $res = $this->db->query("SELECT * FROM `$table` LIMIT 0");
             $fields = [];
             if ($res) {
@@ -2016,7 +2017,7 @@ class App {
                         if (editor && hidden) {
                             const highlight = editor => {
                                 if (typeof Prism !== 'undefined' && Prism.languages && Prism.languages.sql) {
-                                    editor.innerHTML = Prism.highlight(editor.textContent, Prism.languages.sql, 'sql'); console.log('Prism Output:', editor.innerHTML);
+                                    editor.innerHTML = Prism.highlight(editor.textContent, Prism.languages.sql, 'sql');
                                 } else {
                                     editor.textContent = editor.textContent;
                                 }
@@ -2140,51 +2141,50 @@ class App {
         // Bulk Actions JS
         if ($this->config->get('edit')) {
             echo "<script>
-            document.addEventListener('DOMContentLoaded', function() {
-                const selectAll = document.getElementById('comyli-bulk-select-all');
-                const rowChecks = document.querySelectorAll('.comyli-bulk-check');
-                const bulkDelBtn = document.getElementById('comyli-bulk-delete-btn');
-                
-                function updateBulkDelBtn() {
+            if (!window._comyliBulkDelegated) {
+                window._comyliBulkDelegated = true;
+                function updateComyliBulkDelBtn() {
+                    const rowChecks = document.querySelectorAll('.comyli-bulk-check');
+                    const bulkDelBtn = document.getElementById('comyli-bulk-delete-btn');
                     let anyChecked = Array.from(rowChecks).some(cb => cb.checked);
                     if (bulkDelBtn) bulkDelBtn.style.display = anyChecked ? 'inline-block' : 'none';
                 }
-                
-                if (selectAll) {
-                    selectAll.addEventListener('change', function() {
-                        rowChecks.forEach(cb => cb.checked = selectAll.checked);
-                        updateBulkDelBtn();
-                    });
-                }
-                
-                rowChecks.forEach(cb => {
-                    cb.addEventListener('change', function() {
-                        if (!this.checked && selectAll) selectAll.checked = false;
-                        let allChecked = Array.from(rowChecks).every(c => c.checked);
+
+                document.addEventListener('change', function(e) {
+                    if (e.target && e.target.id === 'comyli-bulk-select-all') {
+                        const rowChecks = document.querySelectorAll('.comyli-bulk-check');
+                        rowChecks.forEach(cb => cb.checked = e.target.checked);
+                        updateComyliBulkDelBtn();
+                    } else if (e.target && e.target.classList.contains('comyli-bulk-check')) {
+                        const selectAll = document.getElementById('comyli-bulk-select-all');
+                        const rowChecks = document.querySelectorAll('.comyli-bulk-check');
+                        if (!e.target.checked && selectAll) selectAll.checked = false;
+                        let allChecked = rowChecks.length > 0 && Array.from(rowChecks).every(c => c.checked);
                         if (allChecked && selectAll) selectAll.checked = true;
-                        updateBulkDelBtn();
-                    });
+                        updateComyliBulkDelBtn();
+                    }
                 });
-                
-                if (bulkDelBtn) {
-                    bulkDelBtn.addEventListener('click', function() {
+
+                document.addEventListener('click', function(e) {
+                    if (e.target && e.target.id === 'comyli-bulk-delete-btn') {
                         if (!confirm('Wirklich alle ausgewählten Zeilen löschen?')) return;
+                        const rowChecks = document.querySelectorAll('.comyli-bulk-check');
+                        const selectAll = document.getElementById('comyli-bulk-select-all');
                         rowChecks.forEach(cb => {
                             if (cb.checked) {
                                 let tr = cb.closest('.tr');
                                 if (tr) {
                                     let btnDel = tr.querySelector('.btnDel');
-                                    if (btnDel) btnDel.click(); // Trigger existing AJAX delete
+                                    if (btnDel) btnDel.click();
                                 }
                             }
                         });
-                        // Uncheck all after triggering delete
                         rowChecks.forEach(cb => cb.checked = false);
                         if (selectAll) selectAll.checked = false;
-                        updateBulkDelBtn();
-                    });
-                }
-            });
+                        updateComyliBulkDelBtn();
+                    }
+                });
+            }
             </script>";
         }
 

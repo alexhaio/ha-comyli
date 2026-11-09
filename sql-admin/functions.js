@@ -133,19 +133,22 @@ var sticky;
 var colnames;
 
 COMYLI.initTable = function(){
-	if (COMYLI._tableInitialized) return;
-	COMYLI._tableInitialized = true;
-
 	//Datentypen fuer sticky-Bar initialisieren
 	navbar = document.getElementById("colNames");
 	if(navbar){
+		if (navbar.dataset.comyliInit === '1') return;
+		navbar.dataset.comyliInit = '1';
+
 		sticky = navbar.offsetTop;
 //Alle Spaltenueberschriften erhalten Mindestbreite und scrollen mit
 		//macht die "fixed"-Spaltenueberschriften h-scrollbar
 		colnames = document.getElementsByClassName('colnames');
-		colsInit()
+		colsInit();
 		
-		window.addEventListener('scroll', scrollHandler);
+		if (!COMYLI._scrollBound) {
+			window.addEventListener('scroll', scrollHandler);
+			COMYLI._scrollBound = true;
+		}
 		scrollHandler();
 		
 
@@ -231,6 +234,17 @@ COMYLI.initTable = function(){
 					var tbl = _get('table');
 					var tblParam = tbl !== undefined && tbl !== 'undefined' ? "&" + base64url_encode('table') + "=" + tbl : "";
 					var uri = "" + getScriptAddr() + "?" + base64url_encode('noInterface') + "=1" + tblParam;
+					if (typeof window.COMYLI_ENV !== 'undefined' && window.COMYLI_ENV.restUrl) {
+						var urlObj = new URL(window.COMYLI_ENV.restUrl + 'save', window.location.origin);
+						urlObj.searchParams.set('comyli_id', window.COMYLI_ENV.postId);
+						if (window.COMYLI_ENV.atts) {
+							urlObj.searchParams.set('comyli_atts', JSON.stringify(window.COMYLI_ENV.atts));
+						}
+						if (tbl !== undefined && tbl !== 'undefined') {
+							urlObj.searchParams.set(base64url_encode('table'), tbl);
+						}
+						uri = urlObj.toString();
+					}
 					
 					xhttp.open("POST", uri, true);
 					if (typeof COMYLI_ENV !== 'undefined' && COMYLI_ENV.nonce) xhttp.setRequestHeader('X-WP-Nonce', COMYLI_ENV.nonce);
@@ -440,18 +454,18 @@ function getScriptAddr(){
 
 function base64url_encode(data) { 
 	return window.btoa(data)
-		.replace('+','-')
-		.replace('/','_')
-		.replace(/=+$/gm,'');
+		.replace(/\+/g, '-')
+		.replace(/\//g, '_')
+		.replace(/=+$/gm, '');
 }
 
 function base64url_decode(data) {
+	var padLen = (4 - (data.length % 4)) % 4;
 	return window.atob(
-		data.padEnd(data.length + data.length % 2, '=')
-		.replace('_','/')
-		.replace('-','+')
+		data.replace(/_/g, '/')
+			.replace(/-/g, '+')
+			.padEnd(data.length + padLen, '=')
 	);
-
 }
 function display(e,s){
 	e.style.display = s;
@@ -645,10 +659,8 @@ document.addEventListener('DOMContentLoaded', () => {
         handle.addEventListener('mousedown', startResize);
     }
 
-    // FÃƒÆ’Ã‚Â¼ge Handles zu allen Spalten im Container hinzu
-    const columns = tableContainer.querySelectorAll('.td');
+    const columns = tableContainer.querySelectorAll('#colNames > .td');
     columns.forEach((column, index) => {
-        // FÃƒÆ’Ã‚Â¼ge das Handle nur zu den Spalten hinzu, die NICHT die letzte sind
         if (index < columns.length - 1) {
              addResizableHandle(column);
         }

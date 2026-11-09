@@ -3,7 +3,7 @@ Contributors: alexhaio, ha
 Tags: mysql, admin, table, reporting, crud, rest-api, gutenberg, chart, cron, export
 Requires at least: 6.0
 Tested up to: 6.7
-Stable tag: 3.1.5
+Stable tag: 3.1.6
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -24,9 +24,60 @@ CoMyLi (Configurable MySQL Light Interface) transforms MySQL databases and SQL q
 * **Dynamic Context Parameters:** Parameterized SQL queries (`:parameter_name`) with automatic token resolution (`{current_user_id}`, `{current_user_name}`, `{get:param}`).
 * **Headless REST API:** Modern JSON endpoints for SPA/Vue/React applications (`/wp-json/comyli/v1/query/{name}` and `/wp-json/comyli/v1/table/{name}`).
 * **Clean CSV Export:** Header-safe, buffer-cleared CSV streaming with UTF-8 BOM for Microsoft Excel.
+* **Custom CSS & JavaScript Editors:** Dedicated syntax-highlighted CSS and JS editors per table (`comyli`) and per query (`comyli_query`) with WordPress revision tracking and automatic frontend injection.
 * **Custom Column Renderers:** Powerful hook system (`apply_filters('comyli_render_cell')` and `apply_filters('comyli_render_column_{name}')`).
 * **LiveSync (Auto / An / Aus):** Real-time optimistic concurrency synchronization with multi-user collision protection.
 * **Auto-Updates via GitHub:** Native integration with Plugin-Update-Checker (PUC v5).
+
+= Gutenberg Blocks =
+
+1. **CoMyLi Tabelle (`ha-comyli/query-table`):**
+   * Attributes: `query` (string), `table` (string), `params` (string, e.g. `id=123&status=aktiv`), `layout` (`clean` | `default`), `limit` (number, 5–200), `filter` (boolean), `csvExport` (boolean), `edit` (boolean).
+2. **CoMyLi Diagramm (`ha-comyli/chart`):**
+   * Attributes: `query` (string), `table` (string), `chartType` (`bar` | `line` | `pie` | `doughnut`), `labelColumn` (string), `valueColumn` (string), `title` (string), `height` (number, 200–800).
+3. **CoMyLi KPI-Kachel (`ha-comyli/kpi-card`):**
+   * Attributes: `query` (string), `table` (string), `title` (string), `unit` (string), `trend` (string), `trendDirection` (`up` | `down` | `neutral`), `icon` (string), `color` (hex string).
+4. **CoMyLi Abfrage-Liste (`ha-comyli/query-list`):**
+   * Attributes: `title` (string), `category` (string), `layout` (`grid` | `list`), `showCount` (boolean), `showDesc` (boolean).
+
+= Shortcodes =
+
+* **`[comyli_table]` / `[comyli]` / `[ha-comyli]`:**
+  * `id`: Post ID of a configured `comyli` table post.
+  * `query` / `qry`: Slug, title, or ID of a `comyli_query` post or `.sql` filename in `wp-content/comyli-queries/`.
+  * `table` / `tables`: Database table name or `comyli` post slug.
+  * `params`: Query string (`key=val&key2=val2`) or JSON string for `:param_name` placeholders.
+  * `layout`: `clean` (default, embedded view without sidebar) or `default` (full UI with sidebar).
+  * `limit`: Rows per page (default: `25`).
+  * `filter`: `1` (show search & column filters) or `0` (hide).
+  * `csvExport`: `1` (show CSV export button) or `0` (hide).
+  * `edit`: `1` (enable inline editing/insert/delete if user has `can_edit_table` capability) or `0` (read-only).
+  * Example: `[comyli_table query="offene-posten" params="jahr=2026" layout="clean" limit="50" csvExport="1"]`
+
+* **`[comyli_query_list]` / `[comyli_queries]`:**
+  * Renders an interactive overview of all queries accessible to the current user.
+  * Attributes: `title` (string), `category` (category slug or name), `layout` (`grid` | `list`), `showCount` (`1` | `0`), `showDesc` (`1` | `0`).
+  * Example: `[comyli_query_list category="Controlling" layout="grid"]`
+
+= Dynamic SQL Parameters & Context Tokens =
+
+Note: Placeholders are automatically escaped and quoted as SQL literals where appropriate; do not wrap them in single quotes in your SQL code.
+
+* `{current_user_id}`: Current WordPress user ID (integer, `0` for guests).
+* `{current_user_name}`: Current WordPress `user_login` (quoted SQL string).
+* `{get:param_name}`: Reads `$_GET['param_name']` from the URL and escapes it safely.
+* `:param_name`: Binds values passed via `params` attribute or `$_GET['param_name']`.
+* `[QRY]sub_query_name[/QRY]`: Embeds another query as a subquery `(SELECT ...) AS sub_query_name`.
+
+= Programmatic PHP Rendering =
+
+`echo comyli_render(['query' => 'my_query', 'params' => ['status' => 'aktiv'], 'layout' => 'clean', 'limit' => 25, 'filter' => true, 'csvExport' => false, 'edit' => false]);`
+
+= Headless REST API & Developer Hooks =
+
+* `GET /wp-json/comyli/v1/query/{name}?page=1&limit=25` – Executes a query and returns columns, pagination metadata, and rows.
+* `GET|POST|PUT|DELETE /wp-json/comyli/v1/table/{name}` – Full CRUD operations on local or external database tables.
+* Filters: `comyli_config`, `comyli_config_{$table}`, `comyli_render_cell`, `comyli_render_column_{$colName}`, `comyli_cap_query_{$queryName}`, `comyli_cap_table_view_{$table}`, `comyli_cap_table_edit_{$table}`.
 
 == Installation ==
 
@@ -36,6 +87,15 @@ CoMyLi (Configurable MySQL Light Interface) transforms MySQL databases and SQL q
 4. Add tables or queries via Gutenberg blocks, shortcode `[comyli_table query="MyQuery" layout="clean"]`, or in PHP via `echo comyli_render(['query' => 'MyQuery']);`.
 
 == Changelog ==
+
+= 3.1.6 =
+* Added: Comprehensive `README.md` and expanded `readme.txt` documentation covering all Gutenberg blocks, shortcodes, dynamic parameters, REST API endpoints, and developer hooks.
+* Fixed: Implemented `LegacySpecifics::migrateConfigs()` with nonce protection to prevent a fatal error when migrating legacy table configurations.
+* Fixed: Nonce mismatch when deleting CSV archives other than the most recent entry in `QueryManager` / `QueryScheduler`.
+* Fixed: Table event bindings (`COMYLI.initTable()` and bulk selection/deletion) now properly re-initialize after AJAX filtering, sorting, and pagination.
+* Fixed: Automatic removal of trailing semicolons in SQL queries to prevent syntax errors in subquery wrappers.
+* Fixed: Added external database support via `ConnectionManager` and prepared statements to the headless `/wp-json/comyli/v1/table/{name}` REST endpoint.
+* Fixed: `base64url_encode` and `base64url_decode` global regex replacements and Modulo-4 padding in frontend JavaScript, and scoped column resize handles strictly to table headers (`#colNames > .td`).
 
 = 3.1.5 =
 * Improved: Persistent query storage moved to `wp-content/comyli-queries/` by default, protecting custom queries from being wiped during plugin updates.

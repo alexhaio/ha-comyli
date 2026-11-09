@@ -339,5 +339,46 @@ class LegacySpecifics {
         
         return $config;
     }
-}
 
+    /**
+     * Migrates and synchronizes legacy serialized table configurations in post_content
+     * with individual _comyli_* post meta fields.
+     */
+    public function migrateConfigs(): void {
+        $postType = $this->config ? ($this->config->plugin['type'] ?? 'comyli') : 'comyli';
+        $posts = get_posts([
+            'post_type'      => $postType,
+            'posts_per_page' => -1,
+            'post_status'    => ['publish', 'draft', 'pending', 'private'],
+        ]);
+
+        foreach ($posts as $post) {
+            $data = [];
+            $unserialized = maybe_unserialize($post->post_content);
+            if (is_array($unserialized)) {
+                $data = $unserialized;
+            }
+
+            $meta = get_post_meta($post->ID);
+            foreach ($meta as $k => $v) {
+                if (str_starts_with($k, '_comyli_')) {
+                    $key = substr($k, 8);
+                    $data[$key] = maybe_unserialize($v[0]);
+                }
+            }
+
+            if (empty($data)) {
+                continue;
+            }
+
+            foreach ($data as $key => $val) {
+                update_post_meta($post->ID, '_comyli_' . $key, $val);
+            }
+
+            wp_update_post([
+                'ID'           => $post->ID,
+                'post_content' => wp_slash(serialize($data)),
+            ]);
+        }
+    }
+}

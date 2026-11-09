@@ -52,44 +52,66 @@ class RestApi {
 
     private function bootstrapConfig(\WP_REST_Request $request): array {
         $postId = (int)$request->get_param('comyli_id');
-        $post = get_post($postId);
-        
-        if (!$post) {
-            return [];
-        }
-        
-                                $unserialized = maybe_unserialize($post->post_content);
-        $postConfig = is_array($unserialized) ? $unserialized : [];
-        
-        $meta = get_post_meta($post->ID);
-        foreach ($meta as $k => $v) {
-            if (str_starts_with($k, '_comyli_')) {
-                $postConfig[substr($k, 8)] = maybe_unserialize($v[0]);
-            }
-        }
-        if (function_exists('parse_blocks')) {
-            $blocks = parse_blocks($post->post_content);
-            foreach ($blocks as $block) {
-                if ($block['blockName'] === 'comyli/table' && !empty($block['attrs'])) {
-                    $postConfig = array_merge($postConfig, $block['attrs']);
+        $postConfig = [];
+
+        if ($postId > 0) {
+            $resolved = ConnectionManager::resolve_table_config($postId);
+            if ($resolved) {
+                $postConfig = $resolved;
+            } else {
+                $post = get_post($postId);
+                if ($post) {
+                    $unserialized = maybe_unserialize($post->post_content);
+                    $postConfig = is_array($unserialized) ? $unserialized : [];
+                    $meta = get_post_meta($post->ID);
+                    foreach ($meta as $k => $v) {
+                        if (str_starts_with($k, '_comyli_')) {
+                            $postConfig[substr($k, 8)] = maybe_unserialize($v[0]);
+                        }
+                    }
+                    if (function_exists('parse_blocks')) {
+                        $blocks = parse_blocks($post->post_content);
+                        foreach ($blocks as $block) {
+                            if (in_array($block['blockName'] ?? '', ['comyli/table', 'ha-comyli/query-table'], true) && !empty($block['attrs'])) {
+                                $postConfig = array_merge($postConfig, $block['attrs']);
+                            }
+                        }
+                    }
+                    if (has_shortcode($post->post_content, 'comyli') || has_shortcode($post->post_content, 'comyli_table')) {
+                        $pattern = get_shortcode_regex(['comyli', 'comyli_table']);
+                        if (preg_match_all('/' . $pattern . '/s', $post->post_content, $matches) && array_key_exists(2, $matches)) {
+                            $atts = shortcode_parse_atts($matches[3][0] ?? '');
+                            if (is_array($atts)) {
+                                $postConfig = array_merge($postConfig, $atts);
+                            }
+                        }
+                    }
                 }
             }
         }
-        if (has_shortcode($post->post_content, 'comyli')) {
-            $pattern = get_shortcode_regex(['comyli']);
-            if (preg_match_all('/' . $pattern . '/s', $post->post_content, $matches) && array_key_exists(2, $matches) && in_array('comyli', $matches[2])) {
-                $index = array_search('comyli', $matches[2]);
-                $atts = shortcode_parse_atts($matches[3][$index]);
-                if (is_array($atts)) $postConfig = array_merge($postConfig, $atts);
-            }
-        }
+
         if ($request->has_param('comyli_atts')) {
-            $atts = json_decode($request->get_param('comyli_atts'), true);
+            $atts = json_decode((string)$request->get_param('comyli_atts'), true);
             if (is_array($atts)) {
+                if (empty($postConfig) && !empty($atts['table'])) {
+                    $resolved = ConnectionManager::resolve_table_config($atts['table']);
+                    if ($resolved) {
+                        $postConfig = $resolved;
+                        $postId = (int)($resolved['comyli_id'] ?? 0);
+                    }
+                }
                 $postConfig = array_merge($postConfig, $atts);
             }
         }
-        
+
+        if (!empty($postConfig['table']) && empty($postConfig['tables'])) {
+            $postConfig['tables'] = $postConfig['table'];
+        }
+
+        if (empty($postConfig['tables']) && $postId <= 0) {
+            return [];
+        }
+
         $config = array_merge($this->pluginConfig->plugin, $postConfig);
         $config['comyli_id'] = $postId;
         $config['is_wp'] = true;
@@ -101,11 +123,22 @@ class RestApi {
         }
 
         $tablesStr = isset($config['tables']) ? (string)$config['tables'] : '';
-        $config['tables'] = explode(',', $tablesStr);
-        $config['stdTbl'] = $config['tables'][0] ?? '';
+        $config['tables'] = array_values(array_filter(array_map('trim', explode(',', $tablesStr))));
+        $config['stdTbl'] = $config['tables'][0] ?? ($config['table'] ?? '');
+
+        if (!empty($config['stdTbl']) && class_exists(Permissions::class)) {
+            if (!Permissions::can_view_table($config['stdTbl'])) {
+                return [];
+            }
+            if (!empty($config['edit']) && !Permissions::can_edit_table($config['stdTbl'])) {
+                $config['edit'] = false;
+            }
+        }
 
         $config = apply_filters('comyli_config', $config, $config['stdTbl']);
-        $config = apply_filters('comyli_config_' . $config['stdTbl'], $config);
+        if (!empty($config['stdTbl'])) {
+            $config = apply_filters('comyli_config_' . $config['stdTbl'], $config);
+        }
 
         return $config;
     }
@@ -289,39 +322,79 @@ class RestApi {
      * @return \WP_REST_Response
      */
     public function api_handle_table(\WP_REST_Request $request) {
-        $table = preg_replace('/[^a-zA-Z0-9_]/', '', (string)$request->get_param('name'));
+        $rawName = trim((string)$request->get_param('name'));
+        $resolved = ConnectionManager::resolve_table_config($rawName);
+
+        $targetTable = $rawName;
+        if ($resolved && !empty($resolved['tables'])) {
+            $tableList = array_values(array_filter(array_map('trim', explode(',', (string)$resolved['tables']))));
+            if (!empty($tableList[0])) {
+                $targetTable = $tableList[0];
+            }
+        }
+
+        $table = preg_replace('/[^a-zA-Z0-9_]/', '', $targetTable);
         if (empty($table)) {
             return new \WP_REST_Response(['error' => 'Ungültiger Tabellenname.'], 400);
         }
 
-        global $wpdb;
+        require_once dirname(__DIR__) . '/sql-admin/index.php';
+
+        try {
+            $mysqli = $resolved
+                ? ConnectionManager::get_connection_for_config($resolved)
+                : ConnectionManager::get_connection_for_table($table);
+        } catch (\Exception $e) {
+            return new \WP_REST_Response(['error' => 'Datenbankfehler: ' . $e->getMessage()], 500);
+        }
+
+        $db = new \Comyli\Standalone\Database($mysqli);
         $method = $request->get_method();
+
+        // Introspect columns and primary key
+        $colRes = $db->query("SHOW COLUMNS FROM `$table`");
+        if (!$colRes || !($colRes instanceof \mysqli_result)) {
+            return new \WP_REST_Response(['error' => "Tabelle '$table' nicht gefunden oder nicht lesbar."], 404);
+        }
+
+        $columns = [];
+        $validCols = [];
+        $pkCol = 'id';
+        while ($col = $colRes->fetch_assoc()) {
+            $fieldName = (string)$col['Field'];
+            $validCols[$fieldName] = true;
+            $isPri = (($col['Key'] ?? '') === 'PRI');
+            if ($isPri) {
+                $pkCol = $fieldName;
+            }
+
+            $typeStr = strtolower($col['Type'] ?? '');
+            $type = 'string';
+            if (str_contains($typeStr, 'int')) $type = 'int';
+            elseif (str_contains($typeStr, 'float') || str_contains($typeStr, 'decimal') || str_contains($typeStr, 'double')) $type = 'float';
+            elseif (str_contains($typeStr, 'date') || str_contains($typeStr, 'time')) $type = 'date';
+
+            $columns[] = [
+                'name'    => $fieldName,
+                'label'   => ucfirst(str_replace('_', ' ', $fieldName)),
+                'type'    => $type,
+                'primary' => $isPri,
+            ];
+        }
 
         if ($method === 'GET') {
             $page = max(1, (int)$request->get_param('page') ?: 1);
             $limit = max(1, min(500, (int)$request->get_param('limit') ?: 25));
             $offset = ($page - 1) * $limit;
 
-            $totalRows = (int)$wpdb->get_var("SELECT COUNT(*) FROM `$table`");
-            $rows = $wpdb->get_results("SELECT * FROM `$table` LIMIT $limit OFFSET $offset", ARRAY_A);
+            $countRes = $db->query("SELECT COUNT(*) FROM `$table`");
+            $totalRows = ($countRes instanceof \mysqli_result && ($r = $countRes->fetch_row())) ? (int)$r[0] : 0;
 
-            // Columns introspection
-            $colMeta = $wpdb->get_results("SHOW COLUMNS FROM `$table`", ARRAY_A);
-            $columns = [];
-            if ($colMeta) {
-                foreach ($colMeta as $col) {
-                    $typeStr = strtolower($col['Type'] ?? '');
-                    $type = 'string';
-                    if (str_contains($typeStr, 'int')) $type = 'int';
-                    elseif (str_contains($typeStr, 'float') || str_contains($typeStr, 'decimal') || str_contains($typeStr, 'double')) $type = 'float';
-                    elseif (str_contains($typeStr, 'date') || str_contains($typeStr, 'time')) $type = 'date';
-
-                    $columns[] = [
-                        'name'    => $col['Field'],
-                        'label'   => ucfirst(str_replace('_', ' ', $col['Field'])),
-                        'type'    => $type,
-                        'primary' => ($col['Key'] === 'PRI'),
-                    ];
+            $dataRes = $db->query("SELECT * FROM `$table` LIMIT $limit OFFSET $offset");
+            $rows = [];
+            if ($dataRes instanceof \mysqli_result) {
+                while ($row = $dataRes->fetch_assoc()) {
+                    $rows[] = $row;
                 }
             }
 
@@ -331,48 +404,81 @@ class RestApi {
                 'page'       => $page,
                 'limit'      => $limit,
                 'columns'    => $columns,
-                'data'       => $rows ?: [],
+                'data'       => $rows,
             ], 200);
         }
 
         if ($method === 'POST') {
             $data = $request->get_json_params() ?: $request->get_body_params();
-            if (empty($data)) {
+            if (empty($data) || !is_array($data)) {
                 return new \WP_REST_Response(['error' => 'Keine Daten übergeben.'], 400);
             }
 
-            $success = $wpdb->insert($table, $data);
-            if ($success === false) {
-                return new \WP_REST_Response(['error' => $wpdb->last_error], 500);
+            $cols = [];
+            $placeholders = [];
+            $params = [];
+            foreach ($data as $k => $v) {
+                if (isset($validCols[$k])) {
+                    $cols[] = "`$k`";
+                    if ($v === null) {
+                        $placeholders[] = 'NULL';
+                    } else {
+                        $placeholders[] = '?';
+                        $params[] = $v;
+                    }
+                }
+            }
+
+            if (empty($cols)) {
+                return new \WP_REST_Response(['error' => 'Keine gültigen Tabellenspalten übergeben.'], 400);
+            }
+
+            $sql = "INSERT INTO `$table` (" . implode(', ', $cols) . ") VALUES (" . implode(', ', $placeholders) . ")";
+            $affected = $db->executePrepared($sql, $params);
+            if ($affected === false) {
+                return new \WP_REST_Response(['error' => $db->getError()], 500);
             }
 
             return new \WP_REST_Response([
                 'success'   => true,
-                'insert_id' => $wpdb->insert_id,
+                'insert_id' => $mysqli->insert_id,
             ], 201);
         }
 
         if ($method === 'PUT') {
             $data = $request->get_json_params() ?: $request->get_body_params();
-            $id = $request->get_param('id') ?? ($data['id'] ?? null);
-
-            $pkCol = 'id';
-            $priCol = $wpdb->get_row("SHOW COLUMNS FROM `$table` WHERE `Key` = 'PRI'", ARRAY_A);
-            if ($priCol && !empty($priCol['Field'])) {
-                $pkCol = $priCol['Field'];
-                if (isset($data[$pkCol])) {
-                    $id = $data[$pkCol];
-                }
+            if (!is_array($data)) {
+                $data = [];
             }
+            $id = $request->get_param('id') ?? ($data[$pkCol] ?? ($data['id'] ?? null));
 
-            if ($id === null) {
+            if ($id === null || $id === '') {
                 return new \WP_REST_Response(['error' => "Primärschlüssel '$pkCol' erforderlich."], 400);
             }
 
             unset($data[$pkCol]);
-            $updated = $wpdb->update($table, $data, [$pkCol => $id]);
+            $sets = [];
+            $params = [];
+            foreach ($data as $k => $v) {
+                if (isset($validCols[$k])) {
+                    if ($v === null) {
+                        $sets[] = "`$k` = NULL";
+                    } else {
+                        $sets[] = "`$k` = ?";
+                        $params[] = $v;
+                    }
+                }
+            }
+
+            if (empty($sets)) {
+                return new \WP_REST_Response(['error' => 'Keine zu aktualisierenden Spalten übergeben.'], 400);
+            }
+
+            $params[] = $id;
+            $sql = "UPDATE `$table` SET " . implode(', ', $sets) . " WHERE `$pkCol` = ?";
+            $updated = $db->executePrepared($sql, $params);
             if ($updated === false) {
-                return new \WP_REST_Response(['error' => $wpdb->last_error], 500);
+                return new \WP_REST_Response(['error' => $db->getError()], 500);
             }
 
             return new \WP_REST_Response([
@@ -382,20 +488,17 @@ class RestApi {
         }
 
         if ($method === 'DELETE') {
-            $id = $request->get_param('id');
-            $pkCol = 'id';
-            $priCol = $wpdb->get_row("SHOW COLUMNS FROM `$table` WHERE `Key` = 'PRI'", ARRAY_A);
-            if ($priCol && !empty($priCol['Field'])) {
-                $pkCol = $priCol['Field'];
-            }
+            $jsonParams = $request->get_json_params();
+            $id = $request->get_param('id') ?? (is_array($jsonParams) ? ($jsonParams[$pkCol] ?? ($jsonParams['id'] ?? null)) : null);
 
-            if (!$id) {
+            if ($id === null || $id === '') {
                 return new \WP_REST_Response(['error' => "Primärschlüssel '$pkCol' erforderlich."], 400);
             }
 
-            $deleted = $wpdb->delete($table, [$pkCol => $id]);
+            $sql = "DELETE FROM `$table` WHERE `$pkCol` = ?";
+            $deleted = $db->executePrepared($sql, [$id]);
             if ($deleted === false) {
-                return new \WP_REST_Response(['error' => $wpdb->last_error], 500);
+                return new \WP_REST_Response(['error' => $db->getError()], 500);
             }
 
             return new \WP_REST_Response([
