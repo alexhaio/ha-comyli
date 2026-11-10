@@ -27,6 +27,8 @@ CoMyLi (Configurable MySQL Light Interface) transforms MySQL databases and SQL q
 * **Custom CSS & JavaScript Editors:** Dedicated syntax-highlighted CSS and JS editors per table (`comyli`) and per query (`comyli_query`) with WordPress revision tracking and automatic frontend injection.
 * **Custom Column Renderers:** Powerful hook system (`apply_filters('comyli_render_cell')` and `apply_filters('comyli_render_column_{name}')`).
 * **LiveSync (Auto / An / Aus):** Real-time optimistic concurrency synchronization with multi-user collision protection.
+* **Declarative JSON Table Configuration (ConfigResolver):** Define column defaults, forced audit values, dynamic token replacements, foreign keys, role-based access rules, and data-col CSS styling via clean JSON in the WordPress backend without eval().
+* **SQL Query Importer:** One-click migration of server-side .sql files into the WordPress database QueryManager.
 * **Auto-Updates via GitHub:** Native integration with Plugin-Update-Checker (PUC v5).
 
 = Gutenberg Blocks =

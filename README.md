@@ -341,17 +341,22 @@ In Standardwerten (`default`), erzwungenen Werten (`forced`), Überschreibungen 
 | `{sql:SELECT ...}` | Führt eine Leseabfrage auf der Tabellenverbindung aus | Erster skalarer Ergebniswert |
 | `{sql_pad4:SELECT ...}` | Wie `{sql:...}`, formatiert das Ergebnis jedoch 4-stellig mit führenden Nullen | `0042` |
 
-### 12.3 JSON-Konfigurationsschema (Beispiel)
+### 12.3 Vollständiges All-in-One JSON-Referenzbeispiel
+
+Das folgende JSON-Dokument demonstriert **alle** verfügbaren Konfigurationsmöglichkeiten von CoMyLi in einer einzigen, validen Vorlage:
 
 ```json
 {
   "ui": {
     "stdQry": "index",
     "insert_top": true,
+    "insert_bottom": false,
     "default_order": "created",
     "default_dir": "DESC",
-    "auto_audit_columns": true
+    "auto_audit_columns": true,
+    "inherit_global_defaults": true
   },
+  "queries": "wp-content/comyli-queries/fuhrpark/",
   "columns": {
     "Datum": {
       "default": "{current_date}"
@@ -359,12 +364,41 @@ In Standardwerten (`default`), erzwungenen Werten (`forced`), Überschreibungen 
     "Bearbeiter": {
       "forced": "{current_user_fullname}"
     },
-    "Gebuehren": {
+    "JahrCode": {
+      "default": "{year_letter:2024}"
+    },
+    "VorgangsNr": {
+      "default": "{sql_pad4:SELECT SQL_NO_CACHE IFNULL(MAX(VorgangsNr), 0) + 1 FROM tbl_vorgang WHERE JahrCode='{column:JahrCode}'}",
+      "post_override": "{sql_pad4:SELECT SQL_NO_CACHE IFNULL(MAX(VorgangsNr), 0) + 1 FROM tbl_vorgang WHERE JahrCode='{column:JahrCode}'}"
+    },
+    "Status": {
+      "default": "offen"
+    },
+    "Betrag": {
       "default": "0.00",
-      "min": "0.00"
+      "min": "0.00",
+      "step": "0.01",
+      "placeholder": "0.00 €"
+    },
+    "Gebuehr": {
+      "default": "0.00",
+      "min": "0.00",
+      "max": "500.00",
+      "step": "3.30"
+    },
+    "Aktenzeichen": {
+      "pattern": "[A-Z]{2}-[0-9]{4}",
+      "placeholder": "z. B. FD-2026",
+      "required": true
     },
     "Durchmesser": {
       "attr": "onInput=\"umfang(this)\""
+    },
+    "Umfang": {
+      "attr": "onInput=\"durchmesser(this)\""
+    },
+    "system_id": {
+      "readonly": true
     }
   },
   "foreign_keys": {
@@ -373,13 +407,30 @@ In Standardwerten (`default`), erzwungenen Werten (`forced`), Überschreibungen 
       "query": "SELECT * FROM tbl_bezirke",
       "mode": "input"
     },
+    "Wohnort": {
+      "source": "sql",
+      "query": "SELECT Wohnort FROM tbl_buerger GROUP BY Wohnort",
+      "mode": "suggestion"
+    },
+    "BewertungStamm": {
+      "source": "sql",
+      "query": "SELECT * FROM tbl_bewertungstamm_krone",
+      "list_key": "BewertungStammKrone",
+      "mode": "input"
+    },
+    "BewertungKrone": {
+      "source": "sql",
+      "query": "SELECT * FROM tbl_bewertungstamm_krone",
+      "list_key": "BewertungStammKrone",
+      "mode": "input"
+    },
     "Fachdienst": {
       "source": "wp_option",
       "option": "ha_ask_user_for_information_fachdienst",
       "property": "fachdienst",
       "mode": "input"
     },
-    "username": {
+    "Sachbearbeiter": {
       "source": "wp_users",
       "field": "user_login",
       "include_empty": true,
@@ -388,28 +439,114 @@ In Standardwerten (`default`), erzwungenen Werten (`forced`), Überschreibungen 
   },
   "access_rules": [
     {
-      "capabilities": ["stabsstelledigitalisierung", "edv"],
+      "capabilities": ["stabsstelle", "edv_admin"],
       "edit": true,
-      "custom_css": ".comyli .td[data-col=\"Beschreibung\"] { width: 600px; }"
+      "custom_css": ".comyli .td[data-col=\"Beschreibung\"] { width: 600px; }\n.comyli .td[data-col=\"_actions\"] { width: 80px; position: sticky; left: 0; z-index: 6; }\n.comyli .td[data-col=\"Titel\"] { position: sticky; left: 80px; z-index: 6; }"
     },
     {
       "capabilities": ["fuehrungskraefte"],
       "edit": false,
-      "visible_columns": ["Name_des_Verfahrens", "Beschreibung", "KI", "Link"],
-      "custom_css": ".comyli .td[data-col=\"KI\"] { max-width: 100px; }"
+      "visible_columns": [
+        "VorgangsNr",
+        "Datum",
+        "Titel",
+        "Fachdienst",
+        "Betrag",
+        "Status"
+      ],
+      "readonly_columns": ["Betrag", "Status"],
+      "custom_css": ".comyli .td[data-col=\"Titel\"] { max-width: 300px; }"
     },
     {
       "capabilities": ["*"],
       "edit": false,
-      "visible_columns": ["Name_des_Verfahrens", "Beschreibung", "Link"]
+      "visible_columns": [
+        "VorgangsNr",
+        "Datum",
+        "Titel",
+        "Status"
+      ]
     }
   ],
   "readonly_unless_capability": {
-    "capability": "arbokat_write",
-    "columns": ["Bezirk", "BaumNr", "Ort", "Durchmesser", "Umfang"]
+    "capability": "fachdienst_leitung",
+    "columns": ["Budget", "Kostenstelle", "GenehmigtAm", "GenehmigtVon"]
+  },
+  "maintenance": {
+    "ensure_quarterly_dates": {
+      "table": "tbl_naechstekontrolldaten",
+      "years_ahead": 3,
+      "months": [1, 4, 7, 10],
+      "day": 1
+    }
   }
 }
 ```
+
+---
+
+### 12.4 Detaillierte Beschreibung aller Konfigurationssektionen
+
+#### 1. `"ui"` (Oberfläche, Sortierung & Verhalten)
+* **`"stdQry"`** (`string`): Name der Standardabfrage (z. B. `"index"`), die beim ersten Laden der Tabelle ausgeführt wird, falls in der URL kein `qry`-Parameter übergeben wurde.
+* **`"insert_top"`** (`boolean`): Wenn `true`, wird die Formularzeile zum Einfügen neuer Datensätze oberhalb der Datentabelle platziert.
+* **`"insert_bottom"`** (`boolean`): Wenn `true`, wird die Einfügezeile unterhalb der Tabelle angezeigt.
+* **`"default_order"`** (`string`): Spaltenname für die initiale Sortierung (z. B. `"created"` oder `"Datum"`), sofern keine URL-Sortierung vorliegt.
+* **`"default_dir"`** (`string`): Sortierrichtung für `default_order` – entweder `"ASC"` (aufsteigend) oder `"DESC"` (absteigend).
+* **`"auto_audit_columns"`** (`boolean`, Standard: `true`): Aktiviert die automatische Befüllung der Revisions- und Auditspalten:
+  * `lastChangedUser`: Wird verdeckt (`valueH`) mit dem aktuellen WordPress-Benutzernamen befüllt.
+  * `created`: Wird schreibgeschützt gesetzt und beim Insert serverseitig mit dem aktuellen Zeitstempel (`Y-m-d H:i:s`) überschrieben (`postOverride`).
+  * `createdUser`: Schreibgeschützt und mit dem Ersteller (`user_login`) belegt.
+* **`"inherit_global_defaults"`** (`boolean`, Standard: `true`): Steuert, ob globale Standardeinstellungen für Audit-Felder vererbt werden.
+
+#### 2. `"queries"` (Speicherort für SQL-Dateien)
+* **`"queries"`** (`string`): Optionaler relativer oder absoluter Serverpfad zu tabellenspezifischen `.sql`-Abfragedateien (z. B. `"wp-content/comyli-queries/meinetabelle/"` oder `"./wp-content/plugins/ha-comyli/queries/bauhof/"`).
+
+#### 3. `"columns"` (Spaltenspezifische Validierung, Defaults & HTML-Attribute)
+Für jede Tabellenspalte (Schlüssel = Spaltenname in der Datenbank) können folgende Eigenschaften definiert werden:
+* **`"default"`** (`string` / `number`): Vorbelegung beim Neuanlegen einer Zeile. Unterstützt statische Werte sowie alle sicheren Tokens (z. B. `"{current_date}"` oder `"{sql:...}"`).
+* **`"forced"`** (`string` / `number`): Erzwungener Wert (`valueH`), der im Hintergrund festgesetzt wird (z. B. `"{current_user_fullname}"`).
+* **`"post_override"`** (`string` / `number`): Wert, der beim Speichern serverseitig zwingend in den Insert-Query geschrieben wird (`postOverride`), z. B. um Beleg- oder Vorgangsnummern lückenlos hochzuzählen:
+  `"{sql_pad4:SELECT SQL_NO_CACHE IFNULL(MAX(nr), 0) + 1 FROM meine_tabelle WHERE code='{column:code}'}"`
+* **`"readonly"`** (`boolean`): Setzt das Feld auf `readonly`, sodass es im Frontend nicht editiert werden kann.
+* **`"min"`** / **`"max"`** (`string` / `number`): HTML5-Eingabegrenzen (`min="0.00"` / `max="500.00"`).
+* **`"step"`** (`string` / `number`): Schrittweite für Zahlenfelder (z. B. `"0.01"` für Währungen oder `"3.30"` für feste Gebühreneinheiten).
+* **`"pattern"`** (`string`): Regulärer Ausdruck zur clientseitigen Validierung (z. B. `"[A-Z]{2}-[0-9]{4}"`).
+* **`"placeholder"`** (`string`): Hilfetext im Eingabefeld (`placeholder="..."`).
+* **`"required"`** (`boolean`): Kennzeichnet das Feld als Pflichtfeld (`required`).
+* **`"attr"`** (`string`): Benutzerdefinierte HTML-Attribute für dynamische JavaScript-Berechnungen (z. B. `onInput="berechne(this)"`). Aus Sicherheitsgründen werden nur die Attribute `onInput`, `min`, `max`, `step`, `pattern`, `placeholder`, `readonly`, `required` und `style` akzeptiert.
+
+#### 4. `"foreign_keys"` (Fremdschlüssel, Dropdowns & Vorschlagslisten)
+Verbindet Spalten mit Nachschlagequellen für Auswahllisten:
+* **`"source"`**: Bestimmt die Datenquelle:
+  * `"sql"`: Führt eine SQL-Abfrage aus (z. B. `"SELECT * FROM tbl_bezirke"`).
+  * `"wp_option"`: Liest ein in den WordPress-Optionen hinterlegtes JSON-Array aus (`"option": "meine_option"`, `"property": "feldname"`).
+  * `"wp_users"`: Lädt WordPress-Benutzer (`"field": "user_login"` oder `"display_name"`, `"include_empty": true` für leere Anfangsoption).
+* **`"mode"`**:
+  * `"input"`: Klassisches `<select>`-Auswahldropdown.
+  * `"suggestion"`: Textfeld mit `<datalist>`-Autovervollständigung (freie Eingabe weiterhin möglich).
+* **`"list_key"`** (`string`, optional): Gemeinsamer Cache-Schlüssel, wenn mehrere Spalten denselben Datensatz teilen (z. B. `BewertungStamm` und `BewertungKrone`).
+
+#### 5. `"access_rules"` (Rollenbasierte Rechte, Spaltenfilterung & Rollen-CSS)
+Ein Array von Berechtigungsregeln. **Wichtig: Die Regeln werden von oben nach unten ausgewertet – die erste zutreffende Regel bestimmt das Verhalten (First-Match-Wins).**
+* **`"capabilities"`** (`array`): Liste von WordPress-Capabilities oder Rollennamen (z. B. `["stabsstelle", "edv_admin"]`). Der Eintrag `["*"]` dient als Catch-All-Regel für alle übrigen angemeldeten und nicht angemeldeten Nutzer.
+* **`"edit"`** (`boolean`): Erlaubt (`true`) oder verbietet (`false`) das Bearbeiten, Einfügen und Löschen von Zeilen.
+* **`"visible_columns"`** (`array`): Whitelist von Spaltennamen. Alle nicht aufgeführten Spalten werden serverseitig ausgeblendet (`limit_cols`).
+* **`"readonly_columns"`** (`array`): Spalten, die für diese Rolle sichtbar, aber schreibgeschützt sind.
+* **`"custom_css"`** (`string`): Rollenspezifisches CSS (z. B. Spaltenbreiten oder Sticky Columns via `[data-col="..."]`). Wird beim CSV-Export automatisch ignoriert.
+
+#### 6. `"readonly_unless_capability"` (Bedingter Schreibschutz)
+Sperrt bestimmte sensible Spalten für alle Nutzer, es sei denn, sie besitzen eine bestimmte Berechtigung:
+* **`"capability"`** (`string`): Erforderliche Capability oder Rolle (z. B. `"fachdienst_leitung"`).
+* **`"columns"`** (`array`): Liste der zu sperrenden Spaltennamen (z. B. `["Budget", "Kostenstelle"]`).
+
+#### 7. `"maintenance"` (Automatische Tabellen-Wartung)
+Führt bei Aufruf der Tabelle automatische Integritäts- und Vorbereitungsroutinen aus:
+* **`"ensure_quarterly_dates"`**: Generiert für Kontroll- und Prüfdatenbanken automatisch zukünftige Quartalstermine:
+  * `"table"` (`string`): Zieltabelle für die Termine (z. B. `"tbl_naechstekontrolldaten"`).
+  * `"years_ahead"` (`number`): Wie viele Jahre im Voraus Termine generiert werden (z. B. `3`).
+  * `"months"` (`array`): Monate (z. B. `[1, 4, 7, 10]`).
+  * `"day"` (`number`): Monatstag (z. B. `1` oder `15`).
 
 ---
 
