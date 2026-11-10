@@ -3,7 +3,7 @@ Contributors: alexhaio, ha
 Tags: mysql, admin, table, reporting, crud, rest-api, gutenberg, chart, cron, export
 Requires at least: 6.0
 Tested up to: 6.7
-Stable tag: 3.3.0
+Stable tag: 3.3.1
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -89,6 +89,11 @@ Note: Placeholders are automatically escaped and quoted as SQL literals where ap
 4. Add tables or queries via Gutenberg blocks, shortcode `[comyli_table query="MyQuery" layout="clean"]`, or in PHP via `echo comyli_render(['query' => 'MyQuery']);`.
 
 == Changelog ==
+
+= 3.3.1 =
+* Fixed: Resolved form action collision in QueryManager editor where nested scheduler forms overrode WordPress post action, causing redirection to the posts overview without saving query changes.
+* Improved: Replaced nested scheduler action forms with direct nonce-verified admin URLs for manual archiving and archive file deletion.
+* Improved: Direct SQL post content updates via $wpdb->update to prevent re-entrant post update hooks and recursion during query saves.
 
 = 3.3.0 =
 * Added: One-click SQL Query Importer to migrate file-based `.sql` queries into database-stored `comyli_query` posts (available in the query list, tables overview, and individual table editors).

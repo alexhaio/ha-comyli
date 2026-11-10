@@ -257,7 +257,7 @@ class QueryScheduler {
      * Handles manual execution & archiving trigger from backend.
      */
     public function handleManualRunArchive(): void {
-        $queryId = (int)($_POST['query_id'] ?? 0);
+        $queryId = (int)($_REQUEST['query_id'] ?? 0);
         check_admin_referer('comyli_manual_archive_' . $queryId);
 
         if (!current_user_can('edit_post', $queryId)) {
@@ -342,8 +342,8 @@ class QueryScheduler {
      * Deletes an archive file and removes its entry from post metadata.
      */
     public function handleDeleteArchive(): void {
-        $queryId   = (int)($_POST['query_id'] ?? 0);
-        $archiveId = sanitize_text_field($_POST['archive_id'] ?? '');
+        $queryId   = (int)($_REQUEST['query_id'] ?? 0);
+        $archiveId = sanitize_text_field($_REQUEST['archive_id'] ?? '');
         check_admin_referer('comyli_delete_archive_' . $queryId);
 
         if (!current_user_can('edit_post', $queryId)) {

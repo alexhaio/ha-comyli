@@ -334,11 +334,19 @@ class QueryManager {
                             }
                             ?>
                         </div>
-                        <?php if ($post->post_status === 'publish'): ?>
+                        <?php if ($post->post_status === 'publish'): 
+                            $manualUrl = wp_nonce_url(
+                                add_query_arg([
+                                    'action'   => 'comyli_run_archive_now',
+                                    'query_id' => $post->ID,
+                                ], admin_url('admin-post.php')),
+                                'comyli_manual_archive_' . $post->ID
+                            );
+                        ?>
                             <div style="margin-top:10px;">
-                                <button type="button" class="button button-secondary" onclick="document.getElementById('comyli_manual_run_form').submit();">
+                                <a href="<?php echo esc_url($manualUrl); ?>" class="button button-secondary">
                                     ▶ Jetzt manuell ausführen & archivieren
-                                </button>
+                                </a>
                             </div>
                         <?php endif; ?>
                     </td>
@@ -367,6 +375,15 @@ class QueryManager {
                             'query_id'   => $post->ID,
                             'archive_id' => $arc['id'],
                         ], admin_url('admin-post.php'));
+
+                        $deleteUrl = wp_nonce_url(
+                            add_query_arg([
+                                'action'     => 'comyli_delete_archive',
+                                'query_id'   => $post->ID,
+                                'archive_id' => $arc['id'],
+                            ], admin_url('admin-post.php')),
+                            'comyli_delete_archive_' . $post->ID
+                        );
                     ?>
                         <tr>
                             <td><strong><?php echo esc_html(wp_date('d.m.Y H:i:s', (int)($arc['created_at'] ?? 0))); ?></strong></td>
@@ -377,29 +394,15 @@ class QueryManager {
                                 <a href="<?php echo esc_url($downloadUrl); ?>" class="button button-small button-primary" style="margin-right:5px;">
                                     ⬇ CSV herunterladen
                                 </a>
-                                <button type="button" class="button button-small" style="color:#dc2626; border-color:#dc2626;" onclick="if(confirm('Archiv wirklich löschen?')) { document.getElementById('comyli_delete_arc_id').value='<?php echo esc_attr($arc['id']); ?>'; document.getElementById('comyli_delete_form').submit(); }">
+                                <a href="<?php echo esc_url($deleteUrl); ?>" class="button button-small" style="color:#dc2626; border-color:#dc2626;" onclick="return confirm('Archiv wirklich löschen?');">
                                     Löschen
-                                </button>
+                                </a>
                             </td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
             </table>
         <?php endif; ?>
-
-        <!-- Hidden forms for actions -->
-        <form id="comyli_manual_run_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:none;">
-            <?php wp_nonce_field('comyli_manual_archive_' . $post->ID); ?>
-            <input type="hidden" name="action" value="comyli_run_archive_now">
-            <input type="hidden" name="query_id" value="<?php echo esc_attr($post->ID); ?>">
-        </form>
-
-        <form id="comyli_delete_form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:none;">
-            <input type="hidden" name="action" value="comyli_delete_archive">
-            <input type="hidden" name="query_id" value="<?php echo esc_attr($post->ID); ?>">
-            <input type="hidden" id="comyli_delete_arc_id" name="archive_id" value="">
-            <?php wp_nonce_field('comyli_delete_archive_' . $post->ID); ?>
-        </form>
         <?php
     }
 
@@ -614,12 +617,13 @@ class QueryManager {
             $sql = wp_unslash($_POST['comyli_sql_code']);
             $currentPost = get_post($post_id);
             if ($currentPost && $currentPost->post_content !== $sql) {
-                remove_action('save_post_' . self::POST_TYPE, [$this, 'savePost']);
-                wp_update_post([
-                    'ID'           => $post_id,
-                    'post_content' => $sql,
-                ]);
-                add_action('save_post_' . self::POST_TYPE, [$this, 'savePost']);
+                global $wpdb;
+                $wpdb->update(
+                    $wpdb->posts,
+                    ['post_content' => $sql],
+                    ['ID' => $post_id]
+                );
+                clean_post_cache($post_id);
             }
         }
 
