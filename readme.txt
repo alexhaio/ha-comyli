@@ -3,7 +3,7 @@ Contributors: alexhaio, ha
 Tags: mysql, admin, table, reporting, crud, rest-api, gutenberg, chart, cron, export
 Requires at least: 6.0
 Tested up to: 6.7
-Stable tag: 3.2.0
+Stable tag: 3.2.1
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -87,6 +87,10 @@ Note: Placeholders are automatically escaped and quoted as SQL literals where ap
 4. Add tables or queries via Gutenberg blocks, shortcode `[comyli_table query="MyQuery" layout="clean"]`, or in PHP via `echo comyli_render(['query' => 'MyQuery']);`.
 
 == Changelog ==
+
+= 3.2.1 =
+* Fixed: Self-contained `base64urlEncode` helper in `ConfigResolver` to prevent fatal error when resolving table configs before `sql-admin/index.php` is loaded.
+* Fixed: Defensive `wp_get_current_user()` user object validation in `ConfigResolver` audit fields and token resolution.
 
 = 3.2.0 =
 * Major Architecture: Completely retired and removed `LegacySpecifics.php` in favor of declarative JSON table configurations evaluated via `ConfigResolver`.

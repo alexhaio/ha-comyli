@@ -71,9 +71,9 @@ class ConfigResolver {
                 $orderCol = sanitize_text_field($ui['default_order']);
                 $orderDir = !empty($ui['default_dir']) ? strtoupper(sanitize_text_field($ui['default_dir'])) : 'ASC';
 
-                $orderParam = \Comyli\Standalone\Security::base64urlEncode('order');
-                $dParam = \Comyli\Standalone\Security::base64urlEncode('d');
-                $qryParam = \Comyli\Standalone\Security::base64urlEncode('qry');
+                $orderParam = self::base64urlEncode('order');
+                $dParam = self::base64urlEncode('d');
+                $qryParam = self::base64urlEncode('qry');
 
                 $isOrderSet = isset($_GET['order']) || isset($_GET['b3JkZXI']) || isset($_GET[$orderParam]);
                 $isQrySet = isset($_GET['qry']) || isset($_GET['cXJ5']) || isset($_GET[$qryParam]);
@@ -236,7 +236,7 @@ class ConfigResolver {
             $currentUser = wp_get_current_user();
 
             $hasAccess = false;
-            if ($currentUser && $currentUser->exists() && !empty($cap)) {
+            if ($currentUser && !empty($currentUser->ID) && !empty($cap)) {
                 if (current_user_can($cap) || in_array($cap, (array)$currentUser->roles, true)) {
                     $hasAccess = true;
                 }
@@ -386,7 +386,7 @@ class ConfigResolver {
         $autoAudit = $advancedConfig['ui']['auto_audit_columns'] ?? true;
         if ($autoAudit) {
             $currentUser = wp_get_current_user();
-            $userLogin = ($currentUser && $currentUser->exists()) ? $currentUser->user_login : 'System';
+            $userLogin = ($currentUser && !empty($currentUser->ID) && !empty($currentUser->user_login)) ? $currentUser->user_login : 'System';
 
             $config['valueH']['lastChangedUser'] = $userLogin;
             $config['readonly']['created'] = true;
@@ -439,7 +439,7 @@ class ConfigResolver {
         // User tokens
         if (str_contains($str, '{current_user_login}')) {
             $u = wp_get_current_user();
-            $str = str_replace('{current_user_login}', ($u && $u->exists()) ? $u->user_login : '', $str);
+            $str = str_replace('{current_user_login}', ($u && !empty($u->ID) && !empty($u->user_login)) ? $u->user_login : '', $str);
         }
         if (str_contains($str, '{current_user_id}')) {
             $str = str_replace('{current_user_id}', (string)get_current_user_id(), $str);
@@ -447,7 +447,7 @@ class ConfigResolver {
         if (str_contains($str, '{current_user_fullname}')) {
             $u = wp_get_current_user();
             $fullName = '';
-            if ($u && $u->exists()) {
+            if ($u && !empty($u->ID)) {
                 $first = get_user_meta($u->ID, 'first_name', true);
                 $last  = get_user_meta($u->ID, 'last_name', true);
                 $fullName = trim("$last, $first");
@@ -746,5 +746,12 @@ class ConfigResolver {
                 'post_content' => wp_slash(serialize($data)),
             ]);
         }
+    }
+
+    /**
+     * Safely encodes data into base64url format without dependency on external classes.
+     */
+    public static function base64urlEncode(string $data): string {
+        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
     }
 }
