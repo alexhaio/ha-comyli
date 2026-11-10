@@ -47,7 +47,7 @@
 
 1. Das Plugin in das Verzeichnis `/wp-content/plugins/ha-comyli` hochladen und in WordPress aktivieren. Updates erfolgen automatisch über GitHub Releases via *Plugin-Update-Checker (PUC v5)*.
 2. **Tabellen konfigurieren:** Unter **CoMyLi Tabellen → Erstellen** eine Datenbanktabelle (lokal oder extern) definieren.
-3. **Abfragen anlegen:** Unter **CoMyLi Tabellen → Abfragen** eine neue SQL-Abfrage im Backend-Editor anlegen oder `.sql`-Dateien im persistenten Verzeichnis `wp-content/comyli-queries/` hinterlegen.
+3. **Abfragen anlegen:** Unter **CoMyLi Tabellen → Abfragen** neue SQL-Abfragen im Backend-Editor definieren.
 4. **Einbinden:** Über Gutenberg-Blöcke, Shortcodes oder direkt per PHP (`comyli_render()`).
 
 ---
@@ -62,7 +62,7 @@ Bettet eine gespeicherte SQL-Abfrage oder eine Datenbanktabelle als interaktive 
 
 | Attribut | Typ | Standard | Beschreibung |
 | :--- | :--- | :--- | :--- |
-| `query` | `string` | `""` | Slug/Name der SQL-Abfrage (CPT `comyli_query` oder `.sql`-Datei). |
+| `query` | `string` | `""` | Slug, Titel oder ID der SQL-Abfrage (CPT `comyli_query`). |
 | `table` | `string` | `""` | Alternativ: Name der Datenbanktabelle oder Slug der CoMyLi-Tabelle. |
 | `params` | `string` | `""` | Dynamische Parameter für `:platzhalter` (Query-String `id=5&status=aktiv` oder JSON). |
 | `layout` | `string` | `"clean"` | `"clean"` (kompakt ohne Seitenleiste) oder `"default"` (vollständiges Interface). |
@@ -197,15 +197,7 @@ if (function_exists('comyli_render')) {
 
 ## 6. SQL-Abfragen, Parameter & Kontext-Token
 
-SQL-Abfragen können entweder im Backend unter **CoMyLi Tabellen → Abfragen** (Custom Post Type `comyli_query`) oder als `.sql`-Datei auf dem Server (im Verzeichnis `wp-content/comyli-queries/` oder im tabellenspezifischen Abfrageordner) gespeichert werden.
-
-### Dateibasierte Abfragen in die Datenbank migrieren (1-Klick-Import)
-
-Um dateibasierte `.sql`-Abfragen in den WordPress-Abfrage-Editor (`comyli_query`) zu überführen:
-* **Globaler Import:** Unter **CoMyLi Tabellen → Abfragen** oder **CoMyLi Tabellen** oben auf **„Dateibasierte Abfragen importieren“** klicken. CoMyLi durchsucht alle konfigurierten Tabellenordner, `wp-content/comyli-queries/` und das Plugin-Verzeichnis, legt die Abfragen als eigene Posts an und verknüpft sie mit der jeweiligen Tabelle. Bereits existierende Abfragen werden automatisch übersprungen.
-* **Tabellenbezogener Import:** Direkt in der Bearbeitungsansicht einer Tabelle unter dem Abschnitt **„Datei-basierte Abfragen“** auf **„📥 Alle X Datei-Abfragen dieser Tabelle importieren“** klicken.
-
-Nach dem Import greift CoMyLi nahtlos auf die datenbankgespeicherten Abfragen zu – bestehende Shortcodes, Blöcke und URLs funktionieren ohne Anpassung weiter.
+SQL-Abfragen werden vollständig in der WordPress-Datenbank über den QueryManager (**CoMyLi Tabellen → Abfragen**, Custom Post Type `comyli_query`) verwaltet. Dies bietet integrierte Syntaxhervorhebung (CodeJar & Prism), WordPress-Revisionen, Zuweisung zu Datenbankverbindungen und feingranulare Berechtigungsprüfungen (Capabilities).
 
 ### Dynamische Platzhalter & Kontext-Token
 
@@ -356,7 +348,6 @@ Das folgende JSON-Dokument demonstriert **alle** verfügbaren Konfigurationsmög
     "auto_audit_columns": true,
     "inherit_global_defaults": true
   },
-  "queries": "wp-content/comyli-queries/fuhrpark/",
   "columns": {
     "Datum": {
       "default": "{current_date}"
@@ -499,10 +490,7 @@ Das folgende JSON-Dokument demonstriert **alle** verfügbaren Konfigurationsmög
   * `createdUser`: Schreibgeschützt und mit dem Ersteller (`user_login`) belegt.
 * **`"inherit_global_defaults"`** (`boolean`, Standard: `true`): Steuert, ob globale Standardeinstellungen für Audit-Felder vererbt werden.
 
-#### 2. `"queries"` (Speicherort für SQL-Dateien)
-* **`"queries"`** (`string`): Optionaler relativer oder absoluter Serverpfad zu tabellenspezifischen `.sql`-Abfragedateien (z. B. `"wp-content/comyli-queries/meinetabelle/"` oder `"./wp-content/plugins/ha-comyli/queries/bauhof/"`).
-
-#### 3. `"columns"` (Spaltenspezifische Validierung, Defaults & HTML-Attribute)
+#### 2. `"columns"` (Spaltenspezifische Validierung, Defaults & HTML-Attribute)
 Für jede Tabellenspalte (Schlüssel = Spaltenname in der Datenbank) können folgende Eigenschaften definiert werden:
 * **`"default"`** (`string` / `number`): Vorbelegung beim Neuanlegen einer Zeile. Unterstützt statische Werte sowie alle sicheren Tokens (z. B. `"{current_date}"` oder `"{sql:...}"`).
 * **`"forced"`** (`string` / `number`): Erzwungener Wert (`valueH`), der im Hintergrund festgesetzt wird (z. B. `"{current_user_fullname}"`).
@@ -516,7 +504,7 @@ Für jede Tabellenspalte (Schlüssel = Spaltenname in der Datenbank) können fol
 * **`"required"`** (`boolean`): Kennzeichnet das Feld als Pflichtfeld (`required`).
 * **`"attr"`** (`string`): Benutzerdefinierte HTML-Attribute für dynamische JavaScript-Berechnungen (z. B. `onInput="berechne(this)"`). Aus Sicherheitsgründen werden nur die Attribute `onInput`, `min`, `max`, `step`, `pattern`, `placeholder`, `readonly`, `required` und `style` akzeptiert.
 
-#### 4. `"foreign_keys"` (Fremdschlüssel, Dropdowns & Vorschlagslisten)
+#### 3. `"foreign_keys"` (Fremdschlüssel, Dropdowns & Vorschlagslisten)
 Verbindet Spalten mit Nachschlagequellen für Auswahllisten:
 * **`"source"`**: Bestimmt die Datenquelle:
   * `"sql"`: Führt eine SQL-Abfrage aus (z. B. `"SELECT * FROM tbl_bezirke"`).
@@ -527,7 +515,7 @@ Verbindet Spalten mit Nachschlagequellen für Auswahllisten:
   * `"suggestion"`: Textfeld mit `<datalist>`-Autovervollständigung (freie Eingabe weiterhin möglich).
 * **`"list_key"`** (`string`, optional): Gemeinsamer Cache-Schlüssel, wenn mehrere Spalten denselben Datensatz teilen (z. B. `BewertungStamm` und `BewertungKrone`).
 
-#### 5. `"access_rules"` (Rollenbasierte Rechte, Spaltenfilterung & Rollen-CSS)
+#### 4. `"access_rules"` (Rollenbasierte Rechte, Spaltenfilterung & Rollen-CSS)
 Ein Array von Berechtigungsregeln. **Wichtig: Die Regeln werden von oben nach unten ausgewertet – die erste zutreffende Regel bestimmt das Verhalten (First-Match-Wins).**
 * **`"capabilities"`** (`array`): Liste von WordPress-Capabilities oder Rollennamen (z. B. `["stabsstelle", "edv_admin"]`). Der Eintrag `["*"]` dient als Catch-All-Regel für alle übrigen angemeldeten und nicht angemeldeten Nutzer.
 * **`"edit"`** (`boolean`): Erlaubt (`true`) oder verbietet (`false`) das Bearbeiten, Einfügen und Löschen von Zeilen.
@@ -535,12 +523,12 @@ Ein Array von Berechtigungsregeln. **Wichtig: Die Regeln werden von oben nach un
 * **`"readonly_columns"`** (`array`): Spalten, die für diese Rolle sichtbar, aber schreibgeschützt sind.
 * **`"custom_css"`** (`string`): Rollenspezifisches CSS (z. B. Spaltenbreiten oder Sticky Columns via `[data-col="..."]`). Wird beim CSV-Export automatisch ignoriert.
 
-#### 6. `"readonly_unless_capability"` (Bedingter Schreibschutz)
+#### 5. `"readonly_unless_capability"` (Bedingter Schreibschutz)
 Sperrt bestimmte sensible Spalten für alle Nutzer, es sei denn, sie besitzen eine bestimmte Berechtigung:
 * **`"capability"`** (`string`): Erforderliche Capability oder Rolle (z. B. `"fachdienst_leitung"`).
 * **`"columns"`** (`array`): Liste der zu sperrenden Spaltennamen (z. B. `["Budget", "Kostenstelle"]`).
 
-#### 7. `"maintenance"` (Automatische Tabellen-Wartung)
+#### 6. `"maintenance"` (Automatische Tabellen-Wartung)
 Führt bei Aufruf der Tabelle automatische Integritäts- und Vorbereitungsroutinen aus:
 * **`"ensure_quarterly_dates"`**: Generiert für Kontroll- und Prüfdatenbanken automatisch zukünftige Quartalstermine:
   * `"table"` (`string`): Zieltabelle für die Termine (z. B. `"tbl_naechstekontrolldaten"`).

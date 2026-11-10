@@ -452,55 +452,7 @@ class FieldHandler {
         }
 
         if (empty($qry)) {
-            $queriesCfg = (string)$config->get('queries', '');
-            if (class_exists('\\ha\\CoMyLi\\QueryManager')) {
-                $baseDir = \ha\CoMyLi\QueryManager::resolve_queries_dir($queriesCfg, $cleanQryName);
-            } else {
-                $baseDir = (!empty($queriesCfg) ? rtrim(str_replace('\\', '/', $queriesCfg), '/') : __DIR__ . '/queries') . '/';
-            }
-
-            $path = $baseDir . $cleanQryName . '.sql';
-            if (!file_exists($path)) {
-                // Check if mapped in QueryManager file scan
-                if (class_exists('\\ha\\CoMyLi\\QueryManager')) {
-                    $filesMap = \ha\CoMyLi\QueryManager::find_sql_files($baseDir);
-                    if (isset($filesMap[$cleanQryName])) {
-                        $path = $filesMap[$cleanQryName];
-                    }
-                }
-            }
-
-            if (!file_exists($path)) {
-                // Check in subdirectories or uppercase extension
-                $found = glob($baseDir . '*/' . $cleanQryName . '.sql') 
-                    ?: (glob($baseDir . '*/*/' . $cleanQryName . '.sql') 
-                    ?: (glob($baseDir . $cleanQryName . '.SQL') ?: []));
-                if (!empty($found)) {
-                    $path = $found[0];
-                }
-            }
-
-            // Fallback: check standard wp-content/comyli-queries if available
-            if (!file_exists($path) && defined('WP_CONTENT_DIR')) {
-                $contentQueriesDir = rtrim(str_replace('\\', '/', WP_CONTENT_DIR), '/') . '/comyli-queries/';
-                if (file_exists($contentQueriesDir . $cleanQryName . '.sql')) {
-                    $path = $contentQueriesDir . $cleanQryName . '.sql';
-                } else {
-                    $foundContent = glob($contentQueriesDir . '*/' . $cleanQryName . '.sql');
-                    if (!empty($foundContent)) {
-                        $path = $foundContent[0];
-                    }
-                }
-            }
-
-            if (file_exists($path)) {
-                $qry = file_get_contents($path);
-                if ($qry === false) {
-                    return '';
-                }
-            } else {
-                return '';
-            }
+            return '';
         }
         
         $match = preg_split("/(\[QRY\]|\[QUERY\])(.*?)(\[\/QRY\]|\[\/QUERY\])/ms", $qry, -1, PREG_SPLIT_DELIM_CAPTURE);
@@ -1523,30 +1475,7 @@ class App {
             $this->config->set('edit', false);
             $this->config->set('insert', false);
         }
-        
-        // Handle Query Frontend Editor
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && $this->config->get('edit') && $this->config->get('editQueriesFrontend')) {
-            if (!Security::verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-                // CSRF Token invalid
-            } else {
-                $qName = preg_replace('/[^a-zA-Z0-9_\-]/', '', Security::unslash($_POST['SQLName'] ?? ''));
-                $qCode = Security::unslash($_POST['SQLContent'] ?? '');
-                $dir = rtrim($this->config->get('queries'), '/\\') . '/';
-                if (!empty($qName) && is_dir($dir)) {
-                    $f = $dir . $qName . '.sql';
-                    if (isset($_POST['btnSQLSave'])) {
-                        file_put_contents($f, $qCode);
-                        $url = "?" . Security::base64urlEncode('qry') . "=" . Security::base64urlEncode($qName);
-                        header("Location: $url");
-                        return;
-                    } elseif (isset($_POST['btnSQLDelete']) && file_exists($f)) {
-                        unlink($f);
-                        header("Location: ?");
-                        return;
-                    }
-                }
-            }
-        }
+
         // Handle POST Actions
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($table) && !$isQuery && $this->config->get('edit')) {
             $res = $this->db->query("SELECT * FROM `$table` LIMIT 0");
@@ -1737,25 +1666,7 @@ class App {
         }
         if ($raw === '') return '';
         $decoded = Security::base64urlDecode($raw);
-        $queriesCfg = (string)$this->config->get('queries', '');
-
-        if (class_exists('\\ha\\CoMyLi\\QueryManager')) {
-            $baseDir = \ha\CoMyLi\QueryManager::resolve_queries_dir($queriesCfg);
-            $filesMap = \ha\CoMyLi\QueryManager::find_sql_files($baseDir);
-            $queries = array_keys($filesMap);
-        } else {
-            $baseDir = (!empty($queriesCfg) ? rtrim(str_replace('\\', '/', $queriesCfg), '/') : __DIR__ . '/queries') . '/';
-            $files = array_merge(glob($baseDir . '*.sql') ?: [], glob($baseDir . '*/*.sql') ?: []);
-            $queries = array_map(function($f) { return basename($f, '.sql'); }, $files);
-            foreach ($files as $f) {
-                $rel = str_replace([$baseDir, '\\'], ['', '/'], $f);
-                $queries[] = preg_replace('/\.sql$/i', '', $rel);
-            }
-        }
-
-        if (in_array($decoded, $queries)) return $decoded;
-        if (in_array($raw, $queries)) return $raw;
-        return $raw ?: $decoded;
+        return $decoded ?: $raw;
     }
 
     private function handleSyncState(string $table, array $fields, array $dbRows, int $totalRows, int $page, int $limit): void {
@@ -1884,24 +1795,6 @@ class App {
             }
 
             if ($this->config->get('listQueries')) {
-                $queriesCfg = (string)$this->config->get('queries', '');
-                $filesMap = [];
-                if (class_exists('\\ha\\CoMyLi\\QueryManager')) {
-                    $queriesDir = \ha\CoMyLi\QueryManager::resolve_queries_dir($queriesCfg);
-                    $filesMap = \ha\CoMyLi\QueryManager::find_sql_files($queriesDir);
-                } else {
-                    $queriesDir = (!empty($queriesCfg) ? rtrim(str_replace('\\', '/', $queriesCfg), '/') : __DIR__ . '/queries') . '/';
-                    if (is_dir($queriesDir)) {
-                        $files = array_merge(glob($queriesDir . '*.sql') ?: [], glob($queriesDir . '*/*.sql') ?: []);
-                        foreach ($files as $f) {
-                            $base = basename($f, '.sql');
-                            $filesMap[$base] = $f;
-                        }
-                    }
-                }
-                $activeQry = $this->getRequestedQuery();
-                $allQueries = [];
-
                 $cptQueries = [];
                 if (class_exists('\\ha\\CoMyLi\\QueryManager')) {
                     $tableId = (int)$this->config->get('comyli_id');
@@ -1917,111 +1810,26 @@ class App {
                     $cptQueries = get_posts($args);
                 }
 
-                if (!empty($filesMap) || !empty($cptQueries)) {
+                if (!empty($cptQueries)) {
+                    $activeQry = $this->getRequestedQuery();
                     echo "<div class='comyli-sidebar-section'>";
                     echo "<h4 class='comyli-sidebar-title'>Abfragen</h4>";
                     echo "<div class='comyli-nav-list'>";
 
-                    $cptSlugs = [];
-                    if (!empty($cptQueries)) {
-                        foreach ($cptQueries as $cq) {
-                            $slug = $cq->post_name ?: sanitize_title($cq->post_title);
-                            $cptSlugs[$slug] = true;
-                            $cptSlugs[sanitize_title($cq->post_title)] = true;
-                            $orig = get_post_meta($cq->ID, '_comyli_original_slug', true);
-                            if ($orig) {
-                                $cptSlugs[$orig] = true;
-                            }
-                            if (class_exists('\\ha\\CoMyLi\\Permissions') && !\ha\CoMyLi\Permissions::can_view_query($slug, $tableId > 0 ? $tableId : null)) {
-                                continue;
-                            }
-                            $url = "?" . Security::base64urlEncode('qry') . "=" . Security::base64urlEncode($slug);
-                            $active = ($activeQry === $slug) ? 'active' : '';
-                            echo "<div class='comyli-nav-item $active'>";
-                            echo "<a href='$url' class='comyli-nav-link'>⚡ " . Security::escapeHtml($cq->post_title) . "</a>";
-                            echo "</div>";
+                    foreach ($cptQueries as $cq) {
+                        $slug = $cq->post_name ?: sanitize_title($cq->post_title);
+                        if (class_exists('\\ha\\CoMyLi\\Permissions') && !\ha\CoMyLi\Permissions::can_view_query($slug, $tableId > 0 ? $tableId : null)) {
+                            continue;
                         }
+                        $url = "?" . Security::base64urlEncode('qry') . "=" . Security::base64urlEncode($slug);
+                        $active = ($activeQry === $slug) ? 'active' : '';
+                        echo "<div class='comyli-nav-item $active'>";
+                        echo "<a href='$url' class='comyli-nav-link'>⚡ " . Security::escapeHtml($cq->post_title) . "</a>";
+                        echo "</div>";
                     }
 
-                    if (!empty($filesMap)) {
-                        foreach ($filesMap as $queryIdentifier => $f) {
-                            $fileBase = basename($f, '.sql');
-                            if (isset($cptSlugs[$queryIdentifier]) || isset($cptSlugs[$fileBase])) {
-                                continue; // Already rendered as database query
-                            }
-                            if (class_exists('\\ha\\CoMyLi\\Permissions') && !\ha\CoMyLi\Permissions::can_view_query($queryIdentifier, $tableId > 0 ? $tableId : null)) {
-                                continue;
-                            }
-                            $url = "?" . Security::base64urlEncode('qry') . "=" . Security::base64urlEncode($queryIdentifier);
-                            $active = ($activeQry === $queryIdentifier || $activeQry === basename($f, '.sql')) ? 'active' : '';
-                            
-                            echo "<div class='comyli-nav-item $active'>";
-                            echo "<a href='$url' class='comyli-nav-link'>📁 " . Security::escapeHtml($queryIdentifier) . "</a>";
-                            
-                            if ($this->config->get('edit') && $this->config->get('editQueriesFrontend')) {
-                                $code = file_get_contents($f);
-                                $allQueries[$queryIdentifier] = $code;
-                                echo "<button type='button' class='comyli-edit-qry-btn' data-qry='" . Security::escapeAttr($queryIdentifier) . "' title='Bearbeiten'>&#9998;</button>";
-                            }
-                            echo "</div>";
-                        }
-                    }
+                    echo "</div></div>";
                 }
-                if ($this->config->get('edit') && $this->config->get('editQueriesFrontend')) {
-                    echo "<button type='button' class='comyli-new-qry-btn' onclick='openComyliQueryModal()'>+ Neue Abfrage</button>";
-                    
-                    // Render Modal HTML
-                    $jsonQueries = json_encode($allQueries, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
-                    echo "<div id='comyli-query-modal' class='comyli-modal' style='display:none;'>";
-                    echo "<div class='comyli-modal-content'>";
-                    echo "<div class='comyli-modal-header'><h3 style='margin:0;' id='comyli-modal-title'>Abfrage bearbeiten</h3><span class='comyli-modal-close' onclick='closeComyliQueryModal()'>&times;</span></div>";
-                    echo "<form method='POST' action=''>";
-                    echo "<input type='hidden' name='csrf_token' value='" . Security::escapeAttr(Security::generateCsrfToken()) . "'>";
-                    echo "<label style='display:block; margin-bottom:5px; font-weight:bold;'>Name (ohne .sql):</label>";
-                    echo "<input type='text' id='comyli-modal-name' name='SQLName' value='' required style='width:100%; margin-bottom:15px;' class='comyli-input'>";
-                    echo "<label style='display:block; margin-bottom:5px; font-weight:bold;'>SQL Code:</label>";
-                    echo "<div class='editor language-sql' id='sqlEditor' style='height:200px; background:#fff; border:1px solid #ccc; border-radius:4px; font-family:monospace; padding:10px; box-sizing:border-box;'></div>";
-                    echo "<textarea name='SQLContent' id='sqlHidden' style='display:none;'></textarea>";
-                    echo "<div style='margin-top:15px; display:flex; justify-content:space-between;'>";
-                    echo "<button type='submit' name='btnSQLSave' class='comyli-btn-primary'>Speichern</button>";
-                    echo "<button type='submit' name='btnSQLDelete' id='comyli-modal-delete' class='comyli-btn-danger' onclick='return confirm(\"Wirklich l&ouml;schen?\");' style='display:none;'>L&ouml;schen</button>";
-                    echo "</div>";
-                    echo "</form></div></div>";
-                    
-                    // Modal JS
-                    echo "<script>
-                        window.comyliQueries = " . $jsonQueries . ";
-                        function openComyliQueryModal(name) {
-                            document.getElementById('comyli-query-modal').style.display = 'flex';
-                            document.getElementById('comyli-modal-name').value = name || '';
-                            const isNew = !name;
-                            document.getElementById('comyli-modal-title').innerText = isNew ? 'Neue Abfrage' : 'Abfrage bearbeiten';
-                            document.getElementById('comyli-modal-delete').style.display = isNew ? 'none' : 'block';
-                            
-                            const code = isNew ? '' : (window.comyliQueries[name] || '');
-                            if (window.comyliCodeJar) {
-                                window.comyliCodeJar.updateCode(code);
-                            } else {
-                                document.getElementById('sqlHidden').value = code;
-                            }
-                        }
-                        function closeComyliQueryModal() {
-                            document.getElementById('comyli-query-modal').style.display = 'none';
-                        }
-                        
-                        document.addEventListener('DOMContentLoaded', function() {
-                            const editBtns = document.querySelectorAll('.comyli-edit-qry-btn');
-                            editBtns.forEach(btn => {
-                                btn.addEventListener('click', function(e) {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    openComyliQueryModal(this.getAttribute('data-qry'));
-                                });
-                            });
-                        });
-                    </script>";
-                }
-                echo "</div></div>";
             }
             echo "</div>"; // End sidebar
         }
@@ -2030,27 +1838,6 @@ class App {
         
         // Toast container for JS notifications
         echo "<div id='toast'></div>";
-            if ($this->config->getArray('path')['codejar'] ?? '') {
-                echo "<script>
-                    if (typeof CodeJar !== 'undefined') {
-                        const editor = document.getElementById('sqlEditor');
-                        const hidden = document.getElementById('sqlHidden');
-                        if (editor && hidden) {
-                            const highlight = editor => {
-                                if (typeof Prism !== 'undefined' && Prism.languages && Prism.languages.sql) {
-                                    editor.innerHTML = Prism.highlight(editor.textContent, Prism.languages.sql, 'sql');
-                                } else {
-                                    editor.textContent = editor.textContent;
-                                }
-                            };
-                            window.comyliCodeJar = CodeJar(editor, highlight);
-                            window.comyliCodeJar.onUpdate(code => {
-                                hidden.value = code;
-                            });
-                        }
-                    }
-                </script>";
-            }
 
         $qryName = $this->getRequestedQuery();
         $isQuery = !empty($qryName);

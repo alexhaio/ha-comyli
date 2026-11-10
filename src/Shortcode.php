@@ -139,7 +139,6 @@ class Shortcode {
             'edit'      => false,
             'filter'    => true,
             'csvExport' => false,
-            'queries'   => $pluginPath . '/queries/',
         ];
 
         // If credentials are not explicitly provided, try to resolve table or query configuration
@@ -164,12 +163,6 @@ class Shortcode {
         }
 
         $config = array_merge($defaults, $args);
-
-        // Resolve queries directory canonically to absolute filesystem path
-        $slug = $config['post_name'] ?? ($config['table'] ?? ($config['query'] ?? ($config['qry'] ?? '')));
-        $config['queries'] = class_exists(QueryManager::class)
-            ? QueryManager::resolve_queries_dir(!empty($config['queries']) ? $config['queries'] : null, $slug)
-            : (!empty($config['queries']) ? $config['queries'] : $pluginPath . '/queries/');
 
         // Map alias keys
         if (!empty($config['query']) && empty($config['qry'])) {

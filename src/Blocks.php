@@ -122,36 +122,8 @@ class Blocks {
             '3.1.0'
         );
 
-        // 1. Discover file-based queries from wp-content/comyli-queries/ and legacy plugin folder
+        // Discover CPT-defined queries (from QueryManager)
         $queryList = [];
-        if (class_exists(QueryManager::class)) {
-            $contentQueriesDir = QueryManager::resolve_queries_dir();
-            $filesMap = QueryManager::find_sql_files($contentQueriesDir);
-            foreach ($filesMap as $name => $f) {
-                $queryList[$name] = [
-                    'value' => $name,
-                    'label' => '📁 ' . $name . '.sql',
-                ];
-            }
-        }
-
-        $queriesDir = $path . '/queries/';
-        if (is_dir($queriesDir)) {
-            $files = glob($queriesDir . '*.sql') ?: [];
-            $subFiles = glob($queriesDir . '*/*.sql') ?: [];
-            foreach (array_merge($files, $subFiles) as $f) {
-                $base = basename($f, '.sql');
-                if (!isset($queryList[$base])) {
-                    $rel = str_replace([$queriesDir, '\\'], ['', '/'], $f);
-                    $queryList[$base] = [
-                        'value' => $base,
-                        'label' => '📁 ' . $rel,
-                    ];
-                }
-            }
-        }
-
-        // 2. Discover CPT-defined queries (from QueryManager)
         if (class_exists(QueryManager::class)) {
             $cptQueries = get_posts([
                 'post_type'      => QueryManager::POST_TYPE,
@@ -264,11 +236,7 @@ class Blocks {
 
         $sql = '';
         if (!empty($query)) {
-            $cfg = $this->config->plugin;
-            $cfg['queries'] = class_exists(QueryManager::class)
-                ? QueryManager::resolve_queries_dir($cfg['queries'] ?? '', $query)
-                : $this->config->plugin['path'] . '/queries/';
-            $configHandler = new \Comyli\Standalone\ConfigHandler($cfg);
+            $configHandler = new \Comyli\Standalone\ConfigHandler($this->config->plugin);
             $sql = \Comyli\Standalone\FieldHandler::resolveSQL($query, $configHandler);
         } elseif (!empty($table)) {
             $safeTable = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
@@ -403,11 +371,7 @@ class Blocks {
 
         if (!empty($query)) {
             require_once $this->config->plugin['path'] . '/sql-admin/index.php';
-            $cfg = $this->config->plugin;
-            $cfg['queries'] = class_exists(QueryManager::class)
-                ? QueryManager::resolve_queries_dir($cfg['queries'] ?? '', $query)
-                : $this->config->plugin['path'] . '/queries/';
-            $configHandler = new \Comyli\Standalone\ConfigHandler($cfg);
+            $configHandler = new \Comyli\Standalone\ConfigHandler($this->config->plugin);
             $sql = \Comyli\Standalone\FieldHandler::resolveSQL($query, $configHandler);
         } elseif (!empty($table)) {
             $safeTable = preg_replace('/[^a-zA-Z0-9_]/', '', $table);

@@ -21,7 +21,6 @@ class PostType {
         add_action('init', [$this, 'registerPostType']);
         add_action('add_meta_boxes', [$this, 'addMetaBoxes']);
         add_action('save_post_' . $this->config->plugin['type'], [$this, 'savePost']);
-        add_filter('views_edit-' . $this->config->plugin['type'], [$this, 'addQueryMigrationButton']);
         add_action('admin_enqueue_scripts', [$this, 'enqueueAdminScripts']);
         
         // Custom Columns for the post list
@@ -208,119 +207,7 @@ class PostType {
                 </table>
             <?php endif; ?>
         </div>
-
-        <hr style="border:0; border-top:1px solid #ccd0d4; margin:20px 0;">
-
-        <!-- 2. File-based queries section -->
         <?php
-        $unserialized = maybe_unserialize($post->post_content);
-        $queriesFolder = '';
-        if (is_array($unserialized) && !empty($unserialized)) {
-            $queriesFolder = $unserialized['queries'] ?? '';
-        } else {
-            $meta = get_post_meta($post->ID, '_comyli_queries', true);
-            $queriesFolder = maybe_unserialize($meta) ?: '';
-        }
-
-        $slug = $post->post_name ?: 'config-' . $post->ID;
-        $absFolder = QueryManager::resolve_queries_dir($queriesFolder, $slug);
-        $defaultRel = QueryManager::get_default_queries_dir($slug, true);
-        $displayPath = !empty($queriesFolder) ? $queriesFolder : $defaultRel;
-        $filesMap = is_dir($absFolder) ? QueryManager::find_sql_files($absFolder) : [];
-        $uniqueCount = count(array_unique($filesMap));
-        ?>
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-            <h4 style="margin:0;">Datei-basierte Abfragen (.sql auf dem Server)</h4>
-            <?php if (!empty($filesMap) && current_user_can('manage_options')): 
-                $tableImportUrl = wp_nonce_url(
-                    admin_url('edit.php?post_type=' . QueryManager::POST_TYPE . '&comyli_action=migrate_file_queries&comyli_table_id=' . $post->ID),
-                    'comyli_migrate_file_queries_nonce'
-                );
-            ?>
-                <a href="<?php echo esc_url($tableImportUrl); ?>" class="button button-secondary" onclick="return confirm('Möchten Sie alle <?php echo $uniqueCount; ?> Datei-Abfragen dieser Tabelle als eigenständige Abfragen in den Abfrage-Editor importieren?');">
-                    📥 Alle <?php echo $uniqueCount; ?> Datei-Abfragen dieser Tabelle importieren
-                </a>
-            <?php endif; ?>
-        </div>
-        <?php
-        if (!is_dir($absFolder)) {
-            echo "<p style='color:#64748b;'>Der Abfragen-Ordner <code>" . esc_html($displayPath) . "</code> existiert noch nicht auf dem Server.<br>Klicken Sie unten auf <strong>Ordner anlegen</strong> oder kopieren Sie Ihre <code>.sql</code>-Dateien in diesen Pfad.</p>";
-            return;
-        }
-        $queryContents = [];
-        foreach ($filesMap as $name => $fPath) {
-            $queryContents[$name] = file_get_contents($fPath) ?: '';
-        }
-
-        if (empty($queryContents)) {
-            echo "<p style='color:#64748b;'>Aktiver Ordner: <code>" . esc_html($displayPath) . "</code> (Ordner ist bereit, enthält aber noch keine <code>.sql</code>-Dateien).</p>";
-        }
-        
-        echo '<div style="margin-bottom:15px;">';
-        echo '<label for="comyli_query_select"><strong>Datei-Abfrage w&auml;hlen:</strong></label> ';
-        echo '<select id="comyli_query_select" style="min-width:200px;">';
-        echo '<option value="">-- Neue Datei-Abfrage anlegen --</option>';
-        foreach ($queryContents as $name => $code) {
-            echo '<option value="' . esc_attr($name) . '">' . esc_html($name) . '</option>';
-        }
-        echo '</select>';
-        echo '</div>';
-
-        echo '<div style="margin-bottom:15px;">';
-        echo '<label for="comyli_query_name"><strong>Dateiname:</strong></label><br>';
-        echo '<input type="text" id="comyli_query_name" name="comyli_query_name" class="regular-text">';
-        echo '<p class="description">Ohne .sql Endung, z.B. <code>meine_abfrage</code></p>';
-        echo '</div>';
-
-        echo '<div style="margin-bottom:15px;">';
-        echo '<label for="comyli_query_code"><strong>SQL Code:</strong></label><br>';
-        echo '<div id="comyli_query_editor" style="width:100%; height:200px; font-family:monospace; background:#fff; border:1px solid #ccc; padding:10px; box-sizing:border-box;"></div>';
-        echo '<textarea id="comyli_query_code" name="comyli_query_code" style="display:none;"></textarea>';
-        echo '</div>';
-
-        echo '<div>';
-        echo '<button type="submit" name="comyli_query_save" value="1" class="button button-secondary" style="margin-right:10px;">Datei speichern</button>';
-        echo '<button type="submit" name="comyli_query_delete" value="1" class="button" onclick="return confirm(\'Wirklich l&ouml;schen?\');" style="color:red; border-color:red;">L&ouml;schen</button>';
-        echo '</div>';
-        
-        $jsonContents = json_encode($queryContents, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
-        echo "<script>
-            jQuery(document).ready(function($) {
-                var queries = $jsonContents;
-                
-                const editor = document.getElementById('comyli_query_editor');
-                const hidden = document.getElementById('comyli_query_code');
-                let jar = null;
-                
-                if (typeof CodeJar !== 'undefined' && editor) {
-                    const highlight = editorEl => {
-                        if (typeof Prism !== 'undefined' && Prism.languages && Prism.languages.sql) {
-                            editorEl.innerHTML = Prism.highlight(editorEl.textContent, Prism.languages.sql, 'sql');
-                        } else {
-                            editorEl.textContent = editorEl.textContent;
-                        }
-                    };
-                    jar = CodeJar(editor, highlight);
-                    jar.onUpdate(code => {
-                        hidden.value = code;
-                    });
-                }
-                
-                $('#comyli_query_select').on('change', function() {
-                    var name = $(this).val();
-                    if (name === '') {
-                        $('#comyli_query_name').val('');
-                        if (jar) jar.updateCode('');
-                        else if (hidden) hidden.value = '';
-                    } else {
-                        $('#comyli_query_name').val(name);
-                        let val = queries[name] || '';
-                        if (jar) jar.updateCode(val);
-                        else if (hidden) hidden.value = val;
-                    }
-                });
-            });
-        </script>";
     }
 
     public function renderMetaBox(\WP_Post $post): void {
@@ -350,22 +237,10 @@ class PostType {
         $this->renderRow('limit', 'Eintr&auml;ge pro Seite', 'number', $data);
         $this->renderRow('edit', 'Bearbeitbar', 'checkbox', $data);
         $this->renderRow('primaryEdit', 'Prim&auml;rschl&uuml;ssel bearbeitbar', 'checkbox', $data);
-        $this->renderRow('eval', 'Abfragen mit Code', 'checkbox', $data);
         $this->renderRow('listQueries', 'Verf&uuml;gbare Abfragen auflisten', 'checkbox', $data);
         $this->renderRow('listTables', 'Verf&uuml;gbare Tabellen auflisten', 'checkbox', $data);
         $this->renderRow('csvExport', 'CSV-Export m&ouml;glich', 'checkbox', $data);
         $this->renderRow('showTypes', 'Typen anzeigen', 'checkbox', $data);
-        $this->renderRow('editQueriesFrontend', 'Abfragen im Frontend bearbeiten', 'checkbox', $data, 'Erlaubt Nutzern (wenn Bearbeitbar aktiv ist), Abfragen direkt im Frontend zu speichern.');
-        
-        $queriesVal = $data['queries'] ?? '';
-        $slug = $post->post_name ?: 'config-' . $post->ID;
-        $defaultRelPath = QueryManager::get_default_queries_dir($slug, true);
-        
-        echo "<tr><th scope='row'><label for='comyli_queries'>Abfragen-Ordner (Pfad)</label></th><td>";
-        echo "<input type='text' id='comyli_queries' name='comyli_queries' value='" . esc_attr($queriesVal) . "' placeholder='" . esc_attr($defaultRelPath) . "' class='regular-text' style='margin-right:10px;'>";
-        echo "<button type='submit' name='comyli_create_queries' value='1' class='button'>Ordner anlegen</button>";
-        echo "<p class='description'>Standardmä&szlig;ig in <code>wp-content</code>: <code>" . esc_html($defaultRelPath) . "</code> (bleibt bei Plugin-Updates erhalten). Bei leerem Feld wird dieser Ordner automatisch verwendet.</p>";
-        echo "</td></tr>";
         
         echo "</tbody></table>";
 
@@ -411,36 +286,6 @@ class PostType {
             return;
         }
 
-        if (!empty($_POST['comyli_create_queries'])) {
-            $post = get_post($post_id);
-            $slug = $post->post_name;
-            if (empty($slug)) $slug = 'config-' . $post_id;
-            
-            $targetRel = QueryManager::get_default_queries_dir($slug, true);
-            $targetAbs = QueryManager::resolve_queries_dir($targetRel, $slug);
-            QueryManager::ensure_queries_dir($targetAbs);
-            $_POST['comyli_queries'] = $targetRel;
-        }
-
-        if (!empty($_POST['comyli_query_save']) || !empty($_POST['comyli_query_delete'])) {
-            $qName = sanitize_file_name($_POST['comyli_query_name'] ?? '');
-            $qCode = wp_unslash($_POST['comyli_query_code'] ?? '');
-            $qFolder = sanitize_text_field($_POST['comyli_queries'] ?? '');
-            $post = get_post($post_id);
-            $slug = $post ? $post->post_name : 'config-' . $post_id;
-            $absFolder = QueryManager::resolve_queries_dir($qFolder, $slug);
-            
-            if (!empty($qName) && is_dir($absFolder)) {
-                $fPath = rtrim($absFolder, '/') . '/' . $qName . '.sql';
-                if (!empty($_POST['comyli_query_save'])) {
-                    QueryManager::ensure_queries_dir($absFolder);
-                    file_put_contents($fPath, $qCode);
-                } elseif (!empty($_POST['comyli_query_delete']) && file_exists($fPath)) {
-                    unlink($fPath);
-                }
-            }
-        }
-
         $dbpass = isset($_POST['comyli_dbpass']) ? wp_unslash($_POST['comyli_dbpass']) : '';
 
         $data = [
@@ -450,16 +295,13 @@ class PostType {
             'dbpass'      => $dbpass,
             'dbserver'    => sanitize_text_field($_POST['comyli_dbserver'] ?? ''),
             'tables'      => sanitize_text_field($_POST['comyli_tables'] ?? ''),
-            'queries'     => sanitize_text_field($_POST['comyli_queries'] ?? ''),
             'limit'       => intval($_POST['comyli_limit'] ?? 100),
             'edit'        => isset($_POST['comyli_edit']) ? 1 : 0,
             'primaryEdit' => isset($_POST['comyli_primaryEdit']) ? 1 : 0,
-            'eval'        => isset($_POST['comyli_eval']) ? 1 : 0,
             'listQueries' => isset($_POST['comyli_listQueries']) ? 1 : 0,
             'listTables'  => isset($_POST['comyli_listTables']) ? 1 : 0,
             'csvExport'   => isset($_POST['comyli_csvExport']) ? 1 : 0,
             'showTypes'   => isset($_POST['comyli_showTypes']) ? 1 : 0,
-            'editQueriesFrontend' => isset($_POST['comyli_editQueriesFrontend']) ? 1 : 0,
         ];
 
         $rawCss = isset($_POST['comyli_custom_css']) ? wp_unslash($_POST['comyli_custom_css']) : '';
@@ -704,18 +546,6 @@ class PostType {
         });
         </script>
         <?php
-    }
-
-    public function addQueryMigrationButton($views) {
-        if (!current_user_can('manage_options')) {
-            return $views;
-        }
-        $url = wp_nonce_url(
-            admin_url('edit.php?post_type=' . QueryManager::POST_TYPE . '&comyli_action=migrate_file_queries'),
-            'comyli_migrate_file_queries_nonce'
-        );
-        $views['comyli-migrate-queries'] = '<a href="' . esc_url($url) . '" class="button button-secondary" onclick="return confirm(\'' . esc_js(__('Dateibasierte SQL-Abfragen (.sql) vom Server in die Datenbank importieren?', 'comyli')) . '\');" style="margin-left:8px;">' . esc_html__('Dateibasierte Abfragen importieren', 'comyli') . '</a>';
-        return $views;
     }
 
     public function setCustomColumns($columns) {

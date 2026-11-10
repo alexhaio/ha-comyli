@@ -90,12 +90,7 @@ class ConfigResolver {
             }
         }
 
-        // 4. Queries folder override if specified
-        if (!empty($advancedConfig['queries']) && is_string($advancedConfig['queries'])) {
-            $config['queries'] = $advancedConfig['queries'];
-        }
-
-        // 5. Columns configuration
+        // 4. Columns configuration
         if (!empty($advancedConfig['columns']) && is_array($advancedConfig['columns'])) {
             foreach ($advancedConfig['columns'] as $colName => $colSettings) {
                 if (!is_array($colSettings)) {

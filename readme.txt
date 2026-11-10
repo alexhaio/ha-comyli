@@ -3,7 +3,7 @@ Contributors: alexhaio, ha
 Tags: mysql, admin, table, reporting, crud, rest-api, gutenberg, chart, cron, export
 Requires at least: 6.0
 Tested up to: 6.7
-Stable tag: 3.3.1
+Stable tag: 3.4.0
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -28,7 +28,6 @@ CoMyLi (Configurable MySQL Light Interface) transforms MySQL databases and SQL q
 * **Custom Column Renderers:** Powerful hook system (`apply_filters('comyli_render_cell')` and `apply_filters('comyli_render_column_{name}')`).
 * **LiveSync (Auto / An / Aus):** Real-time optimistic concurrency synchronization with multi-user collision protection.
 * **Declarative JSON Table Configuration (ConfigResolver):** Define column defaults, forced audit values, dynamic token replacements, foreign keys, role-based access rules, and data-col CSS styling via clean JSON in the WordPress backend without eval().
-* **SQL Query Importer:** One-click migration of server-side .sql files into the WordPress database QueryManager.
 * **Auto-Updates via GitHub:** Native integration with Plugin-Update-Checker (PUC v5).
 
 = Gutenberg Blocks =
@@ -46,7 +45,7 @@ CoMyLi (Configurable MySQL Light Interface) transforms MySQL databases and SQL q
 
 * **`[comyli_table]` / `[comyli]` / `[ha-comyli]`:**
   * `id`: Post ID of a configured `comyli` table post.
-  * `query` / `qry`: Slug, title, or ID of a `comyli_query` post or `.sql` filename in `wp-content/comyli-queries/`.
+  * `query` / `qry`: Slug, title, or ID of a `comyli_query` post.
   * `table` / `tables`: Database table name or `comyli` post slug.
   * `params`: Query string (`key=val&key2=val2`) or JSON string for `:param_name` placeholders.
   * `layout`: `clean` (default, embedded view without sidebar) or `default` (full UI with sidebar).
@@ -89,6 +88,13 @@ Note: Placeholders are automatically escaped and quoted as SQL literals where ap
 4. Add tables or queries via Gutenberg blocks, shortcode `[comyli_table query="MyQuery" layout="clean"]`, or in PHP via `echo comyli_render(['query' => 'MyQuery']);`.
 
 == Changelog ==
+
+= 3.4.0 =
+* Major Architecture: Completely retired and removed all legacy file-based query handling, directory scanning, and server filesystem fallbacks in favor of 100% database-stored QueryManager (CPT `comyli_query`) queries.
+* Cleanup: Removed file query editor metabox, `.sql` saving/deleting handlers, and filesystem creation routines in `PostType`.
+* Cleanup: Removed frontend query modal and CodeJar scripts in `sql-admin/index.php`.
+* Cleanup: Removed file migration buttons, handlers, and directory scan helpers (`get_default_queries_dir`, `resolve_queries_dir`, `find_sql_files`, `ensure_queries_dir`, `migrate_file_queries`) from `QueryManager`.
+* Performance: Streamlined Gutenberg block discovery and query lookup by eliminating filesystem I/O across blocks, shortcodes, REST API, and AJAX.
 
 = 3.3.1 =
 * Fixed: Resolved form action collision in QueryManager editor where nested scheduler forms overrode WordPress post action, causing redirection to the posts overview without saving query changes.

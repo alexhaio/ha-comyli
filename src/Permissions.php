@@ -26,7 +26,7 @@ class Permissions {
             return true;
         }
 
-        $cleanName = preg_replace('/\.sql$/i', '', trim($queryName));
+        $cleanName = trim($queryName);
 
         // 1. Check if dynamically configured in QueryManager (comyli_query post type)
         if (class_exists(__NAMESPACE__ . '\\QueryManager')) {
