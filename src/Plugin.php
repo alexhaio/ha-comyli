@@ -14,7 +14,7 @@ class Plugin {
     private AdminMenu $adminMenu;
     private Shortcode $shortcode;
     private Ajax $ajax;
-    private LegacySpecifics $legacySpecifics;
+    private ConfigResolver $configResolver;
     private PostType $postType;
     private RestApi $restApi;
     private Blocks $blocks;
@@ -33,7 +33,7 @@ class Plugin {
         $this->adminMenu = new AdminMenu($this->config);
         $this->shortcode = new Shortcode($this->config);
         $this->ajax = new Ajax($this->config);
-        $this->legacySpecifics = new LegacySpecifics();
+        $this->configResolver = new ConfigResolver($this->config);
         $this->postType = new PostType($this->config);
         $this->restApi = new RestApi($this->config);
         $this->blocks = new Blocks($this->config);
@@ -49,7 +49,7 @@ class Plugin {
         $this->adminMenu->register();
         $this->shortcode->register();
         $this->ajax->register();
-        $this->legacySpecifics->register();
+        $this->configResolver->register();
         $this->postType->register();
         $this->queryManager->register();
         $this->queryScheduler->register();

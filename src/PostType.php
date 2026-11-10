@@ -90,6 +90,15 @@ class PostType {
         );
 
         add_meta_box(
+            'comyli_advanced_config_meta',
+            'Erweiterte Tabellen-Konfiguration (JSON)',
+            [$this, 'renderAdvancedConfigBox'],
+            $this->config->plugin['type'],
+            'normal',
+            'default'
+        );
+
+        add_meta_box(
             'comyli_queries_meta',
             'Abfragen (Queries) für diese Tabelle',
             [$this, 'renderQueriesBox'],
@@ -449,6 +458,9 @@ class PostType {
         $customJs = trim(preg_replace('/^<\s*script[^>]*>|<\s*\/\s*script\s*>$/i', '', $rawJs));
         $data['custom_js'] = $customJs;
 
+        $rawAdvanced = isset($_POST['comyli_advanced_config']) ? wp_unslash($_POST['comyli_advanced_config']) : '';
+        $data['advanced_config'] = trim($rawAdvanced);
+
         // Save to individual post meta fields
         foreach ($data as $key => $val) {
             update_post_meta($post_id, '_comyli_' . $key, $val);
@@ -566,6 +578,122 @@ class PostType {
         <?php
     }
 
+    public function renderAdvancedConfigBox(\WP_Post $post): void {
+        $advancedConfig = (string)get_post_meta($post->ID, '_comyli_advanced_config', true);
+        if ($advancedConfig === '') {
+            $unserialized = maybe_unserialize($post->post_content);
+            if (is_array($unserialized) && !empty($unserialized['advanced_config'])) {
+                $advancedConfig = (string)$unserialized['advanced_config'];
+            }
+        }
+
+        // If empty, check if this table matches any built-in preset
+        if ($advancedConfig === '') {
+            $metaTables = (string)get_post_meta($post->ID, '_comyli_tables', true);
+            if (empty($metaTables)) {
+                $unserialized = maybe_unserialize($post->post_content);
+                if (is_array($unserialized) && !empty($unserialized['tables'])) {
+                    $metaTables = (string)$unserialized['tables'];
+                }
+            }
+            $table = trim(explode(',', $metaTables)[0] ?? '');
+            if (!empty($table)) {
+                $preset = ConfigResolver::getBuiltinPreset($table);
+                if ($preset !== null) {
+                    $advancedConfig = wp_json_encode($preset, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                }
+            }
+        }
+        ?>
+        <div style="margin-bottom:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <p class="description" style="margin:0;">
+                    Definieren Sie hier deklarativ spezifische Tabellenregeln (Spalten-Defaults, Berechtigungen, Fremdschlüssel, UI-Verhalten).
+                </p>
+                <span id="comyli_json_status" style="font-size:12px; font-weight:600; padding:2px 8px; border-radius:3px; background:#f1f5f9; color:#475569;">JSON-Prüfung...</span>
+            </div>
+            <div id="comyli_advanced_config_editor" style="width:100%; min-height:260px; font-family:monospace; font-size:13px; background:#fff; border:1px solid #ccd0d4; padding:12px; box-sizing:border-box; border-radius:4px; line-height:1.5;"></div>
+            <textarea id="comyli_advanced_config" name="comyli_advanced_config" style="display:none;"><?php echo esc_textarea($advancedConfig); ?></textarea>
+        </div>
+
+        <details style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:4px; padding:8px 12px; font-size:12px; color:#334155; margin-top:8px;">
+            <summary style="cursor:pointer; font-weight:600; color:#0284c7;">Dokumentation &amp; Platzhalter anzeigen (Klick)</summary>
+            <div style="margin-top:10px; line-height:1.6;">
+                <strong>Verfügbare dynamische Tokens (ohne eval):</strong><br>
+                <code>{current_date}</code> (z. B. 2026-11-10) &bull; <code>{current_datetime}</code> &bull; <code>{current_year}</code><br>
+                <code>{current_user_login}</code> &bull; <code>{current_user_id}</code> &bull; <code>{current_user_fullname}</code> (Nachname, Vorname)<br>
+                <code>{year_letter:2024}</code> (zyklischer Buchstabe A, B, C...) &bull; <code>{column:Spaltenname}</code> (Referenz auf eine andere Spalte)<br>
+                <code>{sql:SELECT ...}</code> (Liest skalaren Wert) &bull; <code>{sql_pad4:SELECT ...}</code> (4-stellig mit Nullen gepaddet)<br><br>
+
+                <strong>Hauptbereiche im JSON-Schema:</strong>
+                <ul style="margin:4px 0 0 18px; list-style-type:disc;">
+                    <li><code>ui</code>: <code>stdQry</code>, <code>insert_top</code> (true/false), <code>default_order</code>, <code>default_dir</code>, <code>auto_audit_columns</code></li>
+                    <li><code>columns</code>: <code>[Spalte]: { default, forced, post_override, readonly, min, max, step, pattern, attr }</code></li>
+                    <li><code>foreign_keys</code>: <code>[Spalte]: { source: "sql"|"wp_option"|"wp_users", query, option, property, mode: "input"|"suggestion" }</code></li>
+                    <li><code>access_rules</code>: Array von Regeln <code>{ capabilities: ["..."], edit: true|false, visible_columns: [...], custom_css: "..." }</code></li>
+                    <li><code>readonly_unless_capability</code>: <code>{ capability: "...", columns: [...] }</code></li>
+                    <li><code>maintenance</code>: <code>{ ensure_quarterly_dates: { table, years_ahead, months, day } }</code></li>
+                </ul>
+            </div>
+        </details>
+
+        <script>
+        jQuery(document).ready(function($) {
+            const editorEl = document.getElementById('comyli_advanced_config_editor');
+            const hiddenEl = document.getElementById('comyli_advanced_config');
+            const statusEl = document.getElementById('comyli_json_status');
+
+            function validateJson(code) {
+                if (!statusEl) return;
+                const trimmed = (code || '').trim();
+                if (trimmed === '') {
+                    statusEl.innerText = 'Leer (Standard)';
+                    statusEl.style.background = '#f1f5f9';
+                    statusEl.style.color = '#475569';
+                    return;
+                }
+                try {
+                    JSON.parse(trimmed);
+                    statusEl.innerText = '✓ Gültiges JSON';
+                    statusEl.style.background = '#dcfce7';
+                    statusEl.style.color = '#15803d';
+                } catch(e) {
+                    statusEl.innerText = '⚠️ Syntaxfehler im JSON';
+                    statusEl.style.background = '#fee2e2';
+                    statusEl.style.color = '#b91c1c';
+                }
+            }
+
+            if (typeof CodeJar !== 'undefined' && editorEl && hiddenEl) {
+                const highlight = el => {
+                    if (typeof Prism !== 'undefined' && Prism.languages && (Prism.languages.javascript || Prism.languages.js)) {
+                        const lang = Prism.languages.javascript || Prism.languages.js;
+                        el.innerHTML = Prism.highlight(el.textContent, lang, 'javascript');
+                    } else {
+                        el.textContent = el.textContent;
+                    }
+                };
+                const jar = CodeJar(editorEl, highlight);
+                jar.updateCode(hiddenEl.value);
+                validateJson(hiddenEl.value);
+                jar.onUpdate(code => {
+                    hiddenEl.value = code;
+                    validateJson(code);
+                });
+            } else if (editorEl && hiddenEl) {
+                editorEl.style.display = 'none';
+                hiddenEl.style.display = 'block';
+                hiddenEl.style.width = '100%';
+                hiddenEl.style.minHeight = '240px';
+                hiddenEl.style.fontFamily = 'monospace';
+                hiddenEl.addEventListener('input', () => validateJson(hiddenEl.value));
+                validateJson(hiddenEl.value);
+            }
+        });
+        </script>
+        <?php
+    }
+
     public function addMigrationButton($views) {
         $url = wp_nonce_url(add_query_arg(['comyli_migrate' => '1']), 'comyli_migrate_configs');
         $views['comyli-migrate'] = '<a href="' . esc_url($url) . '" class="button">Alte Konfigurationen migrieren</a>';
@@ -575,8 +703,8 @@ class PostType {
     public function handleMigration() {
         if (isset($_GET['comyli_migrate']) && $_GET['comyli_migrate'] === '1' && current_user_can('manage_options')) {
             check_admin_referer('comyli_migrate_configs');
-            $migrator = new LegacySpecifics($this->config);
-            $migrator->migrateConfigs();
+            $migrator = new ConfigResolver($this->config);
+            $migrator->migrateAllTables();
             wp_safe_redirect(remove_query_arg(['comyli_migrate', '_wpnonce']));
             exit;
         }

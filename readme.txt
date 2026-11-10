@@ -3,7 +3,7 @@ Contributors: alexhaio, ha
 Tags: mysql, admin, table, reporting, crud, rest-api, gutenberg, chart, cron, export
 Requires at least: 6.0
 Tested up to: 6.7
-Stable tag: 3.1.6
+Stable tag: 3.2.0
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -87,6 +87,14 @@ Note: Placeholders are automatically escaped and quoted as SQL literals where ap
 4. Add tables or queries via Gutenberg blocks, shortcode `[comyli_table query="MyQuery" layout="clean"]`, or in PHP via `echo comyli_render(['query' => 'MyQuery']);`.
 
 == Changelog ==
+
+= 3.2.0 =
+* Major Architecture: Completely retired and removed `LegacySpecifics.php` in favor of declarative JSON table configurations evaluated via `ConfigResolver`.
+* Security & Clean Code: Zero `eval()` usage; all dynamic behaviors (dates, user logins, year letters, and scalar queries) are resolved through safe, strictly validated tokens (`{current_date}`, `{current_user_fullname}`, `{year_letter:2024}`, `{column:Col}`, `{sql:...}`, `{sql_pad4:...}`).
+* CSS & Layout: Added `data-col="<column>"` attributes to all header, filter, action, data, and insert table cells, allowing reliable column styling independent of shifting `:nth-of-type(...)` indices when columns are hidden by user roles.
+* Role-Based Access: Introduced declarative `access_rules` supporting multi-capability matching, read-only permissions, column whitelisting (`visible_columns` / `limit_cols`), and role-dependent inline `custom_css`.
+* Backend UI: Added a CodeJar-powered JSON configuration editor metabox with real-time JSON syntax validation and inline documentation for table configurations.
+* Migration: Updated one-click migration routine (`migrateAllTables()`) to safely populate `_comyli_advanced_config` and queries paths for all legacy tables without disrupting existing functionality.
 
 = 3.1.6 =
 * Added: Comprehensive `README.md` and expanded `readme.txt` documentation covering all Gutenberg blocks, shortcodes, dynamic parameters, REST API endpoints, and developer hooks.

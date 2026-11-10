@@ -1080,13 +1080,13 @@ class HtmlRenderer {
             $out .= "</div>";
 
             // Filter Row
-            $out .= "<div class='tr comyli-no-print'><div class='td'><input form='fsp' class='filter' type='submit' value='Filtern'><a href='#' class='cleanFilter'>&#129529;</a></div>";
+            $out .= "<div class='tr comyli-no-print'><div class='td' data-col='_actions'><input form='fsp' class='filter' type='submit' value='Filtern'><a href='#' class='cleanFilter'>&#129529;</a></div>";
             foreach ($fields as $field) {
                 if (!$this->isColVisible($table, $field['name'])) continue;
                 
                 $key = Security::base64urlEncode("whereA01" . $field['name']);
                 $val = isset($_GET[$key]) ? Security::unslash($_GET[$key]) : '';
-                $out .= "<div class='td filterCell'>";
+                $out .= "<div class='td filterCell' data-col='" . Security::escapeAttr($field['name']) . "'>";
                 if ($field['type'] != 252 || !($field['flag']['binary'] ?? false)) {
                     $out .= $this->renderFilterField($field, $val, $key);
                 }
@@ -1103,7 +1103,7 @@ class HtmlRenderer {
         $currentDir = strtoupper(isset($_GET[$dirKey]) ? Security::unslash($_GET[$dirKey]) : 'ASC');
         
         $out .= "<div class='tr b' id='colNames'>";
-        $out .= "<div class='td'><input type='checkbox' id='comyli-bulk-select-all' title='Alle sichtbaren auswählen'></div>";
+        $out .= "<div class='td' data-col='_actions'><input type='checkbox' id='comyli-bulk-select-all' title='Alle sichtbaren auswählen'></div>";
         foreach ($fields as $field) {
             if (!$this->isColVisible($table, $field['name'])) continue;
             
@@ -1118,7 +1118,7 @@ class HtmlRenderer {
             
             $comment = $field['comment'] ?? '';
             $titleAttr = !empty($comment) ? " title='" . Security::escapeAttr($comment) . "'" : "";
-            $out .= "<div class='td colNamesWrap'>";
+            $out .= "<div class='td colNamesWrap' data-col='" . Security::escapeAttr($colName) . "'>";
             $out .= "<div class='colnames'$titleAttr style='cursor:pointer; user-select:none;' onclick='comyliSort(\"$jsCol\", \"$nextDir\")'>";
             $out .= "<span>" . Security::escapeHtml($colName) . $arrow . "</span>";
             if (!empty($comment)) {
@@ -1182,7 +1182,7 @@ class HtmlRenderer {
         return $out;
     }
 
-        public function renderDataRow(array $fields, array $row, bool $editMode): string {
+    public function renderDataRow(array $fields, array $row, bool $editMode): string {
         $out = "";
         
         // 1. Gather all hidden meta fields for this row (Primary Keys + lastChanged)
@@ -1208,7 +1208,7 @@ class HtmlRenderer {
             $csrf = Security::escapeAttr(Security::generateCsrfToken());
             $out .= <<<HTML
 <form class='tr formEdit' method='POST' enctype='multipart/form-data'>
-    <div class='td' style='white-space:nowrap;'>
+    <div class='td' data-col='_actions' style='white-space:nowrap;'>
         {$hiddenInputs}
         <input type='checkbox' class='comyli-bulk-check' style='margin-right:8px;'>
         <input type='hidden' name='csrf_token' value='{$csrf}'>
@@ -1219,7 +1219,7 @@ HTML;
         } else {
             $out .= <<<HTML
 <div class='tr formView'>
-    <div class='td'>{$hiddenInputs}</div>
+    <div class='td' data-col='_actions'>{$hiddenInputs}</div>
 HTML;
         }
 
@@ -1255,9 +1255,12 @@ HTML;
                 }
             }
 
-            // Ensure cell is enclosed in <div class='td'...>
+            // Ensure cell is enclosed in <div class='td'...> and has data-col
             if (!preg_match('/^\s*<div\b[^>]*\btd\b/i', $cellHtml)) {
                 $cellHtml = "<div class='td'>" . $cellHtml . "</div>";
+            }
+            if (!str_contains($cellHtml, 'data-col=')) {
+                $cellHtml = preg_replace('/^(\s*<div\b[^>]*\bclass=[\'"][^\'"]*\btd\b[^\'"]*[\'"])/i', '$1 data-col="' . Security::escapeAttr($field['name']) . '"', $cellHtml);
             }
 
             $out .= $cellHtml;
@@ -1274,7 +1277,7 @@ HTML;
 
     private function renderInsertRow(array $fields): string {
         $out = "<form class='tr formAdd' method='POST' enctype='multipart/form-data'>";
-        $out .= "<div class='td'>";
+        $out .= "<div class='td' data-col='_actions'>";
         $out .= "<input type='hidden' name='csrf_token' value='" . Security::escapeAttr(Security::generateCsrfToken()) . "'>";
         $out .= "<button class='btnAdd' type='submit' name='TA_btnSubmit' value='[Hinzuf]'>&#10009;</button></div>";
         
@@ -1287,13 +1290,17 @@ HTML;
             
             if ((!$isAuto || $this->config->get('primaryEdit')) && !$readonly && !$valueH) {
                 $default = $this->config->getArray('value')[$field['name']] ?? '';
-                $out .= $this->renderField($field, $default);
+                $cellHtml = $this->renderField($field, $default);
             } elseif ($valueH) {
                 $forcedVal = $this->config->getArray('valueH')[$field['name']];
-                $out .= "<div class='td'><input type='hidden' name='" . Security::escapeAttr($field['name']) . "' value='" . Security::escapeAttr($forcedVal) . "'>" . Security::escapeHtml($forcedVal) . "</div>";
+                $cellHtml = "<div class='td'><input type='hidden' name='" . Security::escapeAttr($field['name']) . "' value='" . Security::escapeAttr($forcedVal) . "'>" . Security::escapeHtml($forcedVal) . "</div>";
             } else {
-                $out .= "<div class='td'></div>";
+                $cellHtml = "<div class='td'></div>";
             }
+            if (!str_contains($cellHtml, 'data-col=')) {
+                $cellHtml = preg_replace('/^(\s*<div\b[^>]*\bclass=[\'"][^\'"]*\btd\b[^\'"]*[\'"])/i', '$1 data-col="' . Security::escapeAttr($field['name']) . '"', $cellHtml);
+            }
+            $out .= $cellHtml;
         }
         $out .= "</form>";
         return $out;

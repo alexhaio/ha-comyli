@@ -23,7 +23,8 @@
 9. [Berechtigungssystem & Capabilities (`Permissions`)](#9-berechtigungssystem--capabilities-permissions)
 10. [Headless REST-API](#10-headless-rest-api)
 11. [Custom CSS, Custom JS & LiveSync](#11-custom-css-custom-js--livesync)
-12. [WordPress-Filter & Entwickler-Hooks](#12-wordpress-filter--entwickler-hooks)
+12. [Erweiterte Tabellen-Konfiguration (JSON) & Spalten-CSS (`data-col`)](#12-erweiterte-tabellen-konfiguration-json--spalten-css-data-col)
+13. [WordPress-Filter & Entwickler-Hooks](#13-wordpress-filter--entwickler-hooks)
 
 ---
 
@@ -31,6 +32,8 @@
 
 * **4 Gutenberg-Blöcke:** Interaktive Datentabellen (`ha-comyli/query-table`), Chart.js-Diagramme (`ha-comyli/chart`), KPI-Kennzahlenkacheln (`ha-comyli/kpi-card`) und Berichtsübersichten (`ha-comyli/query-list`).
 * **QueryManager (CPT `comyli_query`):** WordPress-Backend-Editor für SQL-Abfragen mit Syntax-Highlighting (CodeJar & Prism SQL), WordPress-Revisionen (Diff-Ansicht), Kategorien und rollenbasierter Zugriffskontrolle.
+* **Erweiterte JSON-Tabellenkonfiguration (`ConfigResolver`):** Vollständig deklarative Tabellenregeln für Spalten-Defaults, Fremdschlüssel (SQL, WP-Optionen, Benutzer), Berechtigungen und rollenabhängiges CSS – ganz ohne `eval()`.
+* **Spaltenbasiertes CSS (`data-col`):** Alle Tabellenzellen tragen automatisch das Attribut `data-col="<Spaltenname>"`, wodurch Styling unabhängig von variierenden `:nth-of-type(...)`-Reihenfolgen stabil bleibt.
 * **Multi-Datenbank-Unterstützung (`ConnectionManager`):** Nahtloser Zugriff auf die lokale WordPress-Datenbank oder beliebige externe MySQL-Server (inkl. benutzerdefinierter Ports).
 * **Automatische CSV-Archivierung (`QueryScheduler`):** Geplante Ausführung von Abfragen via WP-Cron (täglich, wöchentlich, monatlich) oder manuell auf Knopfdruck mit geschützter Ablage und Download-Verwaltung.
 * **Dynamische SQL-Parameter & Kontext-Token:** Benannte Parameter (`:param_name`), Benutzer-Kontext (`{current_user_id}`, `{current_user_name}`), URL-Parameter (`{get:param}`) sowie verschachtelte Subqueries (`[QRY]...[/QRY]`).
@@ -292,7 +295,117 @@ CoMyLi stellt unter dem Namespace `comyli/v1` REST-API-Endpunkte bereit. Authent
 
 ---
 
-## 12. WordPress-Filter & Entwickler-Hooks
+## 12. Erweiterte Tabellen-Konfiguration (JSON) & Spalten-CSS (`data-col`)
+
+Ab Version 3.2.0 werden alle früheren hardcodierten `LegacySpecifics` durch ein rein deklaratives JSON-Konfigurationsfeld (`_comyli_advanced_config`) im Backend-Editor abgelöst. Die Auflösung erfolgt über die sichere Engine `ConfigResolver` **vollständig ohne `eval()`**.
+
+### 12.1 Spaltenbasiertes CSS mit `data-col`
+Alle Zellen (`.td`) in Kopfzeile, Filterzeile, Datenzeilen und Insert-Zeile tragen automatisch das Attribut `data-col="<Spaltenname>"` (sowie `data-col="_actions"` für die Aktionsspalte).
+
+**Vorteil gegenüber `:nth-of-type(...)`:**
+Wenn für bestimmte Benutzerrollen Spalten über `visible_columns` (`limit_cols`) ausgeblendet werden, verschiebt sich die Nummerierung der Spalten. Mit `data-col` greift das CSS immer exakt auf die richtige Spalte:
+
+```css
+/* Feste Breite für die Beschreibung */
+.comyli .td[data-col="Beschreibung"] { width: 600px; }
+
+/* Maximale Breite für kurze Kennzeichen */
+.comyli .td[data-col="KI"] { max-width: 100px; }
+
+/* Erste Spalten horizontal fixieren (Sticky Columns) */
+.comyli .td[data-col="_actions"] { width: 80px; position: sticky; left: 0; z-index: 6; }
+.comyli .td[data-col="Name_des_Verfahrens"] { position: sticky; left: 80px; z-index: 6; }
+```
+
+### 12.2 Sichere dynamische Tokens (ohne `eval`)
+In Standardwerten (`default`), erzwungenen Werten (`forced`), Überschreibungen (`post_override`) und SQL-Abfragen können folgende Platzhalter genutzt werden:
+
+| Token | Ersetzung | Beispiel |
+| :--- | :--- | :--- |
+| `{current_date}` | Heutiges Datum (`Y-m-d`) | `2026-11-10` |
+| `{current_datetime}` | Aktueller Zeitstempel (`Y-m-d H:i:s`) | `2026-11-10 14:30:00` |
+| `{current_year}` | Aktuelles Kalenderjahr (`Y`) | `2026` |
+| `{current_user_login}` | WordPress-Benutzername des eingeloggten Nutzers | `m.mustermann` |
+| `{current_user_id}` | WordPress-User-ID | `42` |
+| `{current_user_fullname}`| Vollständiger Name (`Nachname, Vorname`) | `Mustermann, Max` |
+| `{year_letter:2024}` | Zyklischer Buchstabe (A, B, C...) ab Startjahr | `C` (für 2026) |
+| `{column:Spaltenname}` | Referenziert den bereits berechneten Wert einer anderen Spalte | `{column:Px}` |
+| `{sql:SELECT ...}` | Führt eine Leseabfrage auf der Tabellenverbindung aus | Erster skalarer Ergebniswert |
+| `{sql_pad4:SELECT ...}` | Wie `{sql:...}`, formatiert das Ergebnis jedoch 4-stellig mit führenden Nullen | `0042` |
+
+### 12.3 JSON-Konfigurationsschema (Beispiel)
+
+```json
+{
+  "ui": {
+    "stdQry": "index",
+    "insert_top": true,
+    "default_order": "created",
+    "default_dir": "DESC",
+    "auto_audit_columns": true
+  },
+  "columns": {
+    "Datum": {
+      "default": "{current_date}"
+    },
+    "Bearbeiter": {
+      "forced": "{current_user_fullname}"
+    },
+    "Gebuehren": {
+      "default": "0.00",
+      "min": "0.00"
+    },
+    "Durchmesser": {
+      "attr": "onInput=\"umfang(this)\""
+    }
+  },
+  "foreign_keys": {
+    "Bezirk": {
+      "source": "sql",
+      "query": "SELECT * FROM tbl_bezirke",
+      "mode": "input"
+    },
+    "Fachdienst": {
+      "source": "wp_option",
+      "option": "ha_ask_user_for_information_fachdienst",
+      "property": "fachdienst",
+      "mode": "input"
+    },
+    "username": {
+      "source": "wp_users",
+      "field": "user_login",
+      "include_empty": true,
+      "mode": "input"
+    }
+  },
+  "access_rules": [
+    {
+      "capabilities": ["stabsstelledigitalisierung", "edv"],
+      "edit": true,
+      "custom_css": ".comyli .td[data-col=\"Beschreibung\"] { width: 600px; }"
+    },
+    {
+      "capabilities": ["fuehrungskraefte"],
+      "edit": false,
+      "visible_columns": ["Name_des_Verfahrens", "Beschreibung", "KI", "Link"],
+      "custom_css": ".comyli .td[data-col=\"KI\"] { max-width: 100px; }"
+    },
+    {
+      "capabilities": ["*"],
+      "edit": false,
+      "visible_columns": ["Name_des_Verfahrens", "Beschreibung", "Link"]
+    }
+  ],
+  "readonly_unless_capability": {
+    "capability": "arbokat_write",
+    "columns": ["Bezirk", "BaumNr", "Ort", "Durchmesser", "Umfang"]
+  }
+}
+```
+
+---
+
+## 13. WordPress-Filter & Entwickler-Hooks
 
 | Filter-Hook | Parameter | Beschreibung |
 | :--- | :--- | :--- |

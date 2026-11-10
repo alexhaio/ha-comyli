@@ -218,6 +218,14 @@ class Shortcode {
         } catch (\Exception $e) {
             return '<div class="comyli-error">Datenbankfehler: ' . esc_html($e->getMessage()) . '</div>';
         }
+        $config['is_wp'] = true;
+
+        if (function_exists('apply_filters')) {
+            $config = apply_filters('comyli_config', $config, $config['stdTbl']);
+            if (!empty($config['stdTbl'])) {
+                $config = apply_filters('comyli_config_' . $config['stdTbl'], $config);
+            }
+        }
 
         ob_start();
 
@@ -232,13 +240,17 @@ class Shortcode {
             echo "<style>body{ overflow: scroll; }</style>";
 
             // 1. Output Custom CSS from Table
-            $tableCss = '';
+            $tableCssParts = [];
             if ($postId > 0) {
-                $tableCss = (string)get_post_meta($postId, '_comyli_custom_css', true);
+                $postCss = (string)get_post_meta($postId, '_comyli_custom_css', true);
+                if (!empty($postCss)) {
+                    $tableCssParts[] = $postCss;
+                }
             }
-            if (empty($tableCss) && !empty($config['custom_css'])) {
-                $tableCss = (string)$config['custom_css'];
+            if (!empty($config['custom_css'])) {
+                $tableCssParts[] = (string)$config['custom_css'];
             }
+            $tableCss = implode("\n", array_unique($tableCssParts));
             if (!empty($tableCss)) {
                 $cleanTableCss = trim(preg_replace('/^<\s*style[^>]*>|<\s*\/\s*style\s*>$/i', '', $tableCss));
                 echo "<style id='comyli-custom-css-table-" . $postId . "'>\n" . wp_strip_all_tags($cleanTableCss) . "\n</style>";
@@ -259,13 +271,19 @@ class Shortcode {
             }
 
             // 3. Output Custom JS from Table
-            $tableJs = '';
+            $tableJsParts = [];
             if ($postId > 0) {
-                $tableJs = (string)get_post_meta($postId, '_comyli_custom_js', true);
+                $postJs = (string)get_post_meta($postId, '_comyli_custom_js', true);
+                if (!empty($postJs)) {
+                    $tableJsParts[] = $postJs;
+                }
             }
-            if (empty($tableJs) && !empty($config['custom_js'])) {
-                $tableJs = (string)$config['custom_js'];
+            if (!empty($tableJsParts) || !empty($config['custom_js'])) {
+                if (!empty($config['custom_js'])) {
+                    $tableJsParts[] = (string)$config['custom_js'];
+                }
             }
+            $tableJs = implode("\n", array_unique($tableJsParts));
             if (!empty($tableJs)) {
                 $cleanTableJs = trim(preg_replace('/^<\s*script[^>]*>|<\s*\/\s*script\s*>$/i', '', $tableJs));
                 echo "<script id='comyli-custom-js-table-" . $postId . "'>\n" . $cleanTableJs . "\n</script>";
@@ -278,15 +296,6 @@ class Shortcode {
                     $cleanQueryJs = trim(preg_replace('/^<\s*script[^>]*>|<\s*\/\s*script\s*>$/i', '', $queryJs));
                     echo "<script id='comyli-custom-js-query-" . $queryPost->ID . "'>\n" . $cleanQueryJs . "\n</script>";
                 }
-            }
-        }
-
-        $config['is_wp'] = true;
-
-        if (function_exists('apply_filters')) {
-            $config = apply_filters('comyli_config', $config, $config['stdTbl']);
-            if (!empty($config['stdTbl'])) {
-                $config = apply_filters('comyli_config_' . $config['stdTbl'], $config);
             }
         }
 
