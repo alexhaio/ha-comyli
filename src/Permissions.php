@@ -13,9 +13,10 @@ class Permissions {
      * Checks if current user can view a given query.
      *
      * @param string $queryName Query identifier.
+     * @param int|null $tableId Optional table post ID for contextual lookup.
      * @return bool
      */
-    public static function can_view_query(string $queryName): bool {
+    public static function can_view_query(string $queryName, ?int $tableId = null): bool {
         if (!function_exists('current_user_can')) {
             return true;
         }
@@ -29,7 +30,7 @@ class Permissions {
 
         // 1. Check if dynamically configured in QueryManager (comyli_query post type)
         if (class_exists(__NAMESPACE__ . '\\QueryManager')) {
-            $requiredCap = QueryManager::get_query_capability($cleanName);
+            $requiredCap = QueryManager::get_query_capability($cleanName, $tableId);
             if (!empty($requiredCap)) {
                 return current_user_can($requiredCap);
             }

@@ -197,7 +197,15 @@ if (function_exists('comyli_render')) {
 
 ## 6. SQL-Abfragen, Parameter & Kontext-Token
 
-SQL-Abfragen können entweder im Backend unter **CoMyLi Tabellen → Abfragen** (Custom Post Type `comyli_query`) oder als `.sql`-Datei im Verzeichnis `wp-content/comyli-queries/` gespeichert werden.
+SQL-Abfragen können entweder im Backend unter **CoMyLi Tabellen → Abfragen** (Custom Post Type `comyli_query`) oder als `.sql`-Datei auf dem Server (im Verzeichnis `wp-content/comyli-queries/` oder im tabellenspezifischen Abfrageordner) gespeichert werden.
+
+### Dateibasierte Abfragen in die Datenbank migrieren (1-Klick-Import)
+
+Um dateibasierte `.sql`-Abfragen in den WordPress-Abfrage-Editor (`comyli_query`) zu überführen:
+* **Globaler Import:** Unter **CoMyLi Tabellen → Abfragen** oder **CoMyLi Tabellen** oben auf **„Dateibasierte Abfragen importieren“** klicken. CoMyLi durchsucht alle konfigurierten Tabellenordner, `wp-content/comyli-queries/` und das Plugin-Verzeichnis, legt die Abfragen als eigene Posts an und verknüpft sie mit der jeweiligen Tabelle. Bereits existierende Abfragen werden automatisch übersprungen.
+* **Tabellenbezogener Import:** Direkt in der Bearbeitungsansicht einer Tabelle unter dem Abschnitt **„Datei-basierte Abfragen“** auf **„📥 Alle X Datei-Abfragen dieser Tabelle importieren“** klicken.
+
+Nach dem Import greift CoMyLi nahtlos auf die datenbankgespeicherten Abfragen zu – bestehende Shortcodes, Blöcke und URLs funktionieren ohne Anpassung weiter.
 
 ### Dynamische Platzhalter & Kontext-Token
 

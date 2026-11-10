@@ -37,6 +37,11 @@ class QueryManager {
         // Custom Columns in post list
         add_filter('manage_' . self::POST_TYPE . '_posts_columns', [$this, 'setCustomColumns']);
         add_action('manage_' . self::POST_TYPE . '_posts_custom_column', [$this, 'renderCustomColumn'], 10, 2);
+
+        // Views button and migration actions
+        add_filter('views_edit-' . self::POST_TYPE, [$this, 'addMigrationViewButton']);
+        add_action('admin_init', [$this, 'handleFileQueryMigration']);
+        add_action('admin_notices', [$this, 'renderMigrationNotices']);
     }
 
     public function registerPostType(): void {
@@ -703,9 +708,10 @@ class QueryManager {
 
     /**
      * Retrieves the raw SQL code of a query by its slug, title or post ID.
+     * Optionally prioritizes queries associated with a specific table ID.
      */
-    public static function get_query_sql(string $queryIdentifier): ?string {
-        $post = self::find_query_post($queryIdentifier);
+    public static function get_query_sql(string $queryIdentifier, ?int $tableId = null): ?string {
+        $post = self::find_query_post($queryIdentifier, $tableId);
         if ($post && !empty($post->post_content)) {
             return $post->post_content;
         }
@@ -714,9 +720,10 @@ class QueryManager {
 
     /**
      * Retrieves the required capability for a given query identifier.
+     * Optionally prioritizes queries associated with a specific table ID.
      */
-    public static function get_query_capability(string $queryIdentifier): string {
-        $post = self::find_query_post($queryIdentifier);
+    public static function get_query_capability(string $queryIdentifier, ?int $tableId = null): string {
+        $post = self::find_query_post($queryIdentifier, $tableId);
         if ($post) {
             $cap = get_post_meta($post->ID, self::META_CAPABILITY, true);
             if ($cap !== '') {
@@ -860,8 +867,9 @@ class QueryManager {
 
     /**
      * Finds a comyli_query post by slug, post name, title or ID.
+     * Optionally prioritizes queries associated with a specific table ID.
      */
-    public static function find_query_post(string $queryIdentifier): ?\WP_Post {
+    public static function find_query_post(string $queryIdentifier, ?int $tableId = null): ?\WP_Post {
         $clean = preg_replace('/\.sql$/i', '', trim($queryIdentifier));
         
         // 1. By ID if numeric
@@ -872,7 +880,27 @@ class QueryManager {
             }
         }
 
-        // 2. By post_name (slug)
+        // 2. If tableId provided, prioritize queries linked to that table
+        if ($tableId && $tableId > 0) {
+            $tablePosts = get_posts([
+                'post_type'      => self::POST_TYPE,
+                'posts_per_page' => -1,
+                'post_status'    => ['publish', 'draft'],
+                'meta_key'       => self::META_TABLE_ID,
+                'meta_value'     => $tableId,
+            ]);
+            foreach ($tablePosts as $tp) {
+                if ($tp->post_name === sanitize_title($clean) || strcasecmp($tp->post_title, $clean) === 0) {
+                    return $tp;
+                }
+                $origSlug = get_post_meta($tp->ID, '_comyli_original_slug', true);
+                if ($origSlug && strcasecmp($origSlug, $clean) === 0) {
+                    return $tp;
+                }
+            }
+        }
+
+        // 3. By post_name (slug)
         $posts = get_posts([
             'post_type'      => self::POST_TYPE,
             'name'           => sanitize_title($clean),
@@ -883,12 +911,36 @@ class QueryManager {
             return $posts[0];
         }
 
-        // 3. By exact title
+        // 3b. By underscore / dash variation
+        $altName = str_contains($clean, '_') ? str_replace('_', '-', $clean) : str_replace('-', '_', $clean);
+        $posts = get_posts([
+            'post_type'      => self::POST_TYPE,
+            'name'           => sanitize_title($altName),
+            'posts_per_page' => 1,
+            'post_status'    => ['publish', 'draft'],
+        ]);
+        if (!empty($posts)) {
+            return $posts[0];
+        }
+
+        // 4. By exact title
         $posts = get_posts([
             'post_type'      => self::POST_TYPE,
             'title'          => $clean,
             'posts_per_page' => 1,
             'post_status'    => ['publish', 'draft'],
+        ]);
+        if (!empty($posts)) {
+            return $posts[0];
+        }
+
+        // 5. By _comyli_original_slug meta
+        $posts = get_posts([
+            'post_type'      => self::POST_TYPE,
+            'posts_per_page' => 1,
+            'post_status'    => ['publish', 'draft'],
+            'meta_key'       => '_comyli_original_slug',
+            'meta_value'     => $clean,
         ]);
         if (!empty($posts)) {
             return $posts[0];
@@ -1104,5 +1156,257 @@ class QueryManager {
         }
 
         return $result;
+    }
+
+    /**
+     * Renders a migration button on the edit.php?post_type=comyli_query list table.
+     *
+     * @param array<string, string> $views
+     * @return array<string, string>
+     */
+    public function addMigrationViewButton(array $views): array {
+        if (!current_user_can('manage_options')) {
+            return $views;
+        }
+
+        $url = wp_nonce_url(
+            admin_url('edit.php?post_type=' . self::POST_TYPE . '&comyli_action=migrate_file_queries'),
+            'comyli_migrate_file_queries_nonce'
+        );
+
+        $views['comyli_migrate_queries'] = '<a href="' . esc_url($url) . '" class="button button-secondary" onclick="return confirm(\'' . esc_js(__('Dateibasierte SQL-Abfragen (.sql) vom Server in die Datenbank importieren?', 'comyli')) . '\');" style="margin-left: 8px;">' . esc_html__('Dateibasierte Abfragen importieren', 'comyli') . '</a>';
+
+        return $views;
+    }
+
+    /**
+     * Handles admin execution of the file queries migration.
+     */
+    public function handleFileQueryMigration(): void {
+        if (isset($_GET['comyli_action']) && $_GET['comyli_action'] === 'migrate_file_queries' && current_user_can('manage_options')) {
+            check_admin_referer('comyli_migrate_file_queries_nonce');
+
+            $tableId = isset($_GET['comyli_table_id']) ? intval($_GET['comyli_table_id']) : null;
+            $res = self::migrate_file_queries($tableId);
+
+            $targetUrl = ($tableId && $tableId > 0)
+                ? admin_url('post.php?post=' . $tableId . '&action=edit')
+                : admin_url('edit.php?post_type=' . self::POST_TYPE);
+
+            $targetUrl = add_query_arg([
+                'comyli_migrated_queries' => $res['imported'],
+                'comyli_skipped_queries'  => $res['skipped'],
+            ], $targetUrl);
+
+            wp_safe_redirect($targetUrl);
+            exit;
+        }
+    }
+
+    /**
+     * Renders admin notice after migration completes.
+     */
+    public function renderMigrationNotices(): void {
+        if (isset($_GET['comyli_migrated_queries']) && current_user_can('manage_options')) {
+            $imported = intval($_GET['comyli_migrated_queries']);
+            $skipped = intval($_GET['comyli_skipped_queries'] ?? 0);
+            $msg = sprintf(
+                __('Migration abgeschlossen: %1$d Datei-Abfrage(n) erfolgreich in die Datenbank importiert, %2$d bereits vorhandene übersprungen.', 'comyli'),
+                $imported,
+                $skipped
+            );
+            echo '<div class="notice notice-success is-dismissible"><p><strong>' . esc_html($msg) . '</strong></p></div>';
+        }
+    }
+
+    /**
+     * Migrates file-based .sql queries into database-stored comyli_query posts.
+     *
+     * @param int|null $tableId Optional table post ID to restrict migration to that table's directory.
+     * @return array{imported: int, skipped: int, errors: array<string>}
+     */
+    public static function migrate_file_queries(?int $tableId = null): array {
+        $filesToMigrate = []; // [ filePath => ['name' => ..., 'table_id' => ...] ]
+
+        if ($tableId && $tableId > 0) {
+            $tablePost = get_post($tableId);
+            if ($tablePost) {
+                $slug = $tablePost->post_name ?: 'config-' . $tableId;
+                $queriesFolder = '';
+                $unserialized = maybe_unserialize($tablePost->post_content);
+                if (is_array($unserialized) && !empty($unserialized['queries'])) {
+                    $queriesFolder = (string)$unserialized['queries'];
+                } else {
+                    $meta = get_post_meta($tableId, '_comyli_queries', true);
+                    $queriesFolder = maybe_unserialize($meta) ?: '';
+                }
+
+                $abs = self::resolve_queries_dir($queriesFolder, $slug);
+                if (is_dir($abs)) {
+                    foreach (self::find_sql_files($abs) as $name => $fPath) {
+                        $filesToMigrate[$fPath] = [
+                            'name'     => $name,
+                            'table_id' => $tableId,
+                        ];
+                    }
+                }
+
+                $adv = get_post_meta($tableId, '_comyli_advanced_config', true);
+                if (!empty($adv)) {
+                    $advArr = is_string($adv) ? json_decode($adv, true) : $adv;
+                    if (!empty($advArr['queries'])) {
+                        $advAbs = self::resolve_queries_dir((string)$advArr['queries'], $slug);
+                        if (is_dir($advAbs) && $advAbs !== $abs) {
+                            foreach (self::find_sql_files($advAbs) as $name => $fPath) {
+                                if (!isset($filesToMigrate[$fPath])) {
+                                    $filesToMigrate[$fPath] = [
+                                        'name'     => $name,
+                                        'table_id' => $tableId,
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Global migration across all configured tables + standard directories
+            $tables = get_posts([
+                'post_type'      => 'comyli',
+                'posts_per_page' => -1,
+                'post_status'    => ['publish', 'draft', 'pending', 'private'],
+            ]);
+
+            $scannedDirs = [];
+
+            foreach ($tables as $tbl) {
+                $tId = $tbl->ID;
+                $tSlug = $tbl->post_name ?: 'config-' . $tId;
+                $qFolder = '';
+                $unserialized = maybe_unserialize($tbl->post_content);
+                if (is_array($unserialized) && !empty($unserialized['queries'])) {
+                    $qFolder = (string)$unserialized['queries'];
+                } else {
+                    $meta = get_post_meta($tId, '_comyli_queries', true);
+                    $qFolder = maybe_unserialize($meta) ?: '';
+                }
+
+                $dirsToCheck = [self::resolve_queries_dir($qFolder, $tSlug)];
+
+                $adv = get_post_meta($tId, '_comyli_advanced_config', true);
+                if (!empty($adv)) {
+                    $advArr = is_string($adv) ? json_decode($adv, true) : $adv;
+                    if (!empty($advArr['queries'])) {
+                        $dirsToCheck[] = self::resolve_queries_dir((string)$advArr['queries'], $tSlug);
+                    }
+                }
+
+                foreach ($dirsToCheck as $dir) {
+                    $normDir = rtrim(str_replace('\\', '/', $dir), '/');
+                    if (is_dir($normDir)) {
+                        $scannedDirs[$normDir] = true;
+                        foreach (self::find_sql_files($normDir) as $name => $fPath) {
+                            if (!isset($filesToMigrate[$fPath])) {
+                                $filesToMigrate[$fPath] = [
+                                    'name'     => $name,
+                                    'table_id' => $tId,
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+
+            // wp-content/comyli-queries/
+            if (defined('WP_CONTENT_DIR')) {
+                $contentQueriesDir = rtrim(str_replace('\\', '/', WP_CONTENT_DIR), '/') . '/comyli-queries';
+                if (is_dir($contentQueriesDir) && !isset($scannedDirs[$contentQueriesDir])) {
+                    $scannedDirs[$contentQueriesDir] = true;
+                    foreach (self::find_sql_files($contentQueriesDir) as $name => $fPath) {
+                        if (!isset($filesToMigrate[$fPath])) {
+                            $filesToMigrate[$fPath] = [
+                                'name'     => $name,
+                                'table_id' => 0,
+                            ];
+                        }
+                    }
+                }
+            }
+
+            // plugin queries/
+            $pluginQueriesDir = rtrim(str_replace('\\', '/', dirname(__DIR__)), '/') . '/queries';
+            if (is_dir($pluginQueriesDir) && !isset($scannedDirs[$pluginQueriesDir])) {
+                $scannedDirs[$pluginQueriesDir] = true;
+                foreach (self::find_sql_files($pluginQueriesDir) as $name => $fPath) {
+                    if (!isset($filesToMigrate[$fPath])) {
+                        $filesToMigrate[$fPath] = [
+                            'name'     => $name,
+                            'table_id' => 0,
+                        ];
+                    }
+                }
+            }
+        }
+
+        $imported = 0;
+        $skipped = 0;
+        $errors = [];
+
+        foreach ($filesToMigrate as $fPath => $info) {
+            $baseName = basename($fPath);
+            $cleanName = preg_replace('/\.sql$/i', '', $baseName);
+            $tId = (int)($info['table_id'] ?? 0);
+
+            // Skip if already existing in DB
+            $existing = self::find_query_post($cleanName, $tId > 0 ? $tId : null);
+            if ($existing) {
+                $skipped++;
+                continue;
+            }
+
+            $sqlContent = @file_get_contents($fPath);
+            if ($sqlContent === false || trim($sqlContent) === '') {
+                $skipped++;
+                continue;
+            }
+
+            $titleWords = preg_replace('/[_\-]+/', ' ', $cleanName);
+            $title = ucwords($titleWords);
+
+            $tablePost = $tId > 0 ? get_post($tId) : null;
+            if ($tablePost && !empty($tablePost->post_title)) {
+                $titleDesc = sprintf(__('Importiert aus %1$s (Tabelle: %2$s)', 'comyli'), $baseName, $tablePost->post_title);
+            } else {
+                $titleDesc = sprintf(__('Importiert aus Datei: %s', 'comyli'), $baseName);
+            }
+
+            $postarr = [
+                'post_type'    => self::POST_TYPE,
+                'post_title'   => $title,
+                'post_name'    => sanitize_title($cleanName),
+                'post_content' => $sqlContent,
+                'post_status'  => 'publish',
+                'meta_input'   => [
+                    self::META_TABLE_ID     => $tId,
+                    self::META_CAPABILITY   => 'read',
+                    self::META_DESCRIPTION  => $titleDesc,
+                    '_comyli_original_slug' => $cleanName,
+                    '_comyli_source_file'   => $fPath,
+                ],
+            ];
+
+            $newId = wp_insert_post($postarr, true);
+            if (is_wp_error($newId)) {
+                $errors[] = sprintf(__('Fehler beim Import von %1$s: %2$s', 'comyli'), $baseName, $newId->get_error_message());
+            } else {
+                $imported++;
+            }
+        }
+
+        return [
+            'imported' => $imported,
+            'skipped'  => $skipped,
+            'errors'   => $errors,
+        ];
     }
 }

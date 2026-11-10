@@ -435,14 +435,17 @@ class FieldHandler {
     public static function resolveSQL(string $qryName, ConfigHandler $config): string {
         $cleanQryName = preg_replace('/\.sql$/i', '', $qryName);
 
+        $tableId = intval($config->get('comyli_id', 0));
+        $tblParam = $tableId > 0 ? $tableId : null;
+
         // Capability check via Permissions
-        if (class_exists('\\ha\\CoMyLi\\Permissions') && !\ha\CoMyLi\Permissions::can_view_query($cleanQryName)) {
+        if (class_exists('\\ha\\CoMyLi\\Permissions') && !\ha\CoMyLi\Permissions::can_view_query($cleanQryName, $tblParam)) {
             return '';
         }
 
         $qry = '';
         if (class_exists('\\ha\\CoMyLi\\QueryManager')) {
-            $dbSql = \ha\CoMyLi\QueryManager::get_query_sql($cleanQryName);
+            $dbSql = \ha\CoMyLi\QueryManager::get_query_sql($cleanQryName, $tblParam);
             if (!empty($dbSql)) {
                 $qry = $dbSql;
             }
@@ -1919,10 +1922,17 @@ class App {
                     echo "<h4 class='comyli-sidebar-title'>Abfragen</h4>";
                     echo "<div class='comyli-nav-list'>";
 
+                    $cptSlugs = [];
                     if (!empty($cptQueries)) {
                         foreach ($cptQueries as $cq) {
                             $slug = $cq->post_name ?: sanitize_title($cq->post_title);
-                            if (class_exists('\\ha\\CoMyLi\\Permissions') && !\ha\CoMyLi\Permissions::can_view_query($slug)) {
+                            $cptSlugs[$slug] = true;
+                            $cptSlugs[sanitize_title($cq->post_title)] = true;
+                            $orig = get_post_meta($cq->ID, '_comyli_original_slug', true);
+                            if ($orig) {
+                                $cptSlugs[$orig] = true;
+                            }
+                            if (class_exists('\\ha\\CoMyLi\\Permissions') && !\ha\CoMyLi\Permissions::can_view_query($slug, $tableId > 0 ? $tableId : null)) {
                                 continue;
                             }
                             $url = "?" . Security::base64urlEncode('qry') . "=" . Security::base64urlEncode($slug);
@@ -1935,7 +1945,11 @@ class App {
 
                     if (!empty($filesMap)) {
                         foreach ($filesMap as $queryIdentifier => $f) {
-                            if (class_exists('\\ha\\CoMyLi\\Permissions') && !\ha\CoMyLi\Permissions::can_view_query($queryIdentifier)) {
+                            $fileBase = basename($f, '.sql');
+                            if (isset($cptSlugs[$queryIdentifier]) || isset($cptSlugs[$fileBase])) {
+                                continue; // Already rendered as database query
+                            }
+                            if (class_exists('\\ha\\CoMyLi\\Permissions') && !\ha\CoMyLi\Permissions::can_view_query($queryIdentifier, $tableId > 0 ? $tableId : null)) {
                                 continue;
                             }
                             $url = "?" . Security::base64urlEncode('qry') . "=" . Security::base64urlEncode($queryIdentifier);

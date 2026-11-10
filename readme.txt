@@ -3,7 +3,7 @@ Contributors: alexhaio, ha
 Tags: mysql, admin, table, reporting, crud, rest-api, gutenberg, chart, cron, export
 Requires at least: 6.0
 Tested up to: 6.7
-Stable tag: 3.2.1
+Stable tag: 3.3.0
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -87,6 +87,12 @@ Note: Placeholders are automatically escaped and quoted as SQL literals where ap
 4. Add tables or queries via Gutenberg blocks, shortcode `[comyli_table query="MyQuery" layout="clean"]`, or in PHP via `echo comyli_render(['query' => 'MyQuery']);`.
 
 == Changelog ==
+
+= 3.3.0 =
+* Added: One-click SQL Query Importer to migrate file-based `.sql` queries into database-stored `comyli_query` posts (available in the query list, tables overview, and individual table editors).
+* Improved: Query resolution priority now checks database-stored queries before disk files, with table-level ID scoping and original file slug fallback (`_comyli_original_slug`).
+* Improved: Sidebar query list deduplication prevents duplicate entries when a query exists both in the database and as a legacy file.
+* Cleanup: Fully removed legacy fallback presets and obsolete configuration migration handlers.
 
 = 3.2.1 =
 * Fixed: Self-contained `base64urlEncode` helper in `ConfigResolver` to prevent fatal error when resolving table configs before `sql-admin/index.php` is loaded.

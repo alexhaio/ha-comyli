@@ -21,8 +21,7 @@ class PostType {
         add_action('init', [$this, 'registerPostType']);
         add_action('add_meta_boxes', [$this, 'addMetaBoxes']);
         add_action('save_post_' . $this->config->plugin['type'], [$this, 'savePost']);
-        add_filter('views_edit-' . $this->config->plugin['type'], [$this, 'addMigrationButton']);
-        add_action('admin_init', [$this, 'handleMigration']);
+        add_filter('views_edit-' . $this->config->plugin['type'], [$this, 'addQueryMigrationButton']);
         add_action('admin_enqueue_scripts', [$this, 'enqueueAdminScripts']);
         
         // Custom Columns for the post list
@@ -213,7 +212,6 @@ class PostType {
         <hr style="border:0; border-top:1px solid #ccd0d4; margin:20px 0;">
 
         <!-- 2. File-based queries section -->
-        <h4 style="margin:0 0 10px 0;">Datei-basierte Abfragen (.sql auf dem Server)</h4>
         <?php
         $unserialized = maybe_unserialize($post->post_content);
         $queriesFolder = '';
@@ -228,13 +226,27 @@ class PostType {
         $absFolder = QueryManager::resolve_queries_dir($queriesFolder, $slug);
         $defaultRel = QueryManager::get_default_queries_dir($slug, true);
         $displayPath = !empty($queriesFolder) ? $queriesFolder : $defaultRel;
-
+        $filesMap = is_dir($absFolder) ? QueryManager::find_sql_files($absFolder) : [];
+        $uniqueCount = count(array_unique($filesMap));
+        ?>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <h4 style="margin:0;">Datei-basierte Abfragen (.sql auf dem Server)</h4>
+            <?php if (!empty($filesMap) && current_user_can('manage_options')): 
+                $tableImportUrl = wp_nonce_url(
+                    admin_url('edit.php?post_type=' . QueryManager::POST_TYPE . '&comyli_action=migrate_file_queries&comyli_table_id=' . $post->ID),
+                    'comyli_migrate_file_queries_nonce'
+                );
+            ?>
+                <a href="<?php echo esc_url($tableImportUrl); ?>" class="button button-secondary" onclick="return confirm('Möchten Sie alle <?php echo $uniqueCount; ?> Datei-Abfragen dieser Tabelle als eigenständige Abfragen in den Abfrage-Editor importieren?');">
+                    📥 Alle <?php echo $uniqueCount; ?> Datei-Abfragen dieser Tabelle importieren
+                </a>
+            <?php endif; ?>
+        </div>
+        <?php
         if (!is_dir($absFolder)) {
             echo "<p style='color:#64748b;'>Der Abfragen-Ordner <code>" . esc_html($displayPath) . "</code> existiert noch nicht auf dem Server.<br>Klicken Sie unten auf <strong>Ordner anlegen</strong> oder kopieren Sie Ihre <code>.sql</code>-Dateien in diesen Pfad.</p>";
             return;
         }
-
-        $filesMap = QueryManager::find_sql_files($absFolder);
         $queryContents = [];
         foreach ($filesMap as $name => $fPath) {
             $queryContents[$name] = file_get_contents($fPath) ?: '';
@@ -694,20 +706,16 @@ class PostType {
         <?php
     }
 
-    public function addMigrationButton($views) {
-        $url = wp_nonce_url(add_query_arg(['comyli_migrate' => '1']), 'comyli_migrate_configs');
-        $views['comyli-migrate'] = '<a href="' . esc_url($url) . '" class="button">Alte Konfigurationen migrieren</a>';
-        return $views;
-    }
-
-    public function handleMigration() {
-        if (isset($_GET['comyli_migrate']) && $_GET['comyli_migrate'] === '1' && current_user_can('manage_options')) {
-            check_admin_referer('comyli_migrate_configs');
-            $migrator = new ConfigResolver($this->config);
-            $migrator->migrateAllTables();
-            wp_safe_redirect(remove_query_arg(['comyli_migrate', '_wpnonce']));
-            exit;
+    public function addQueryMigrationButton($views) {
+        if (!current_user_can('manage_options')) {
+            return $views;
         }
+        $url = wp_nonce_url(
+            admin_url('edit.php?post_type=' . QueryManager::POST_TYPE . '&comyli_action=migrate_file_queries'),
+            'comyli_migrate_file_queries_nonce'
+        );
+        $views['comyli-migrate-queries'] = '<a href="' . esc_url($url) . '" class="button button-secondary" onclick="return confirm(\'' . esc_js(__('Dateibasierte SQL-Abfragen (.sql) vom Server in die Datenbank importieren?', 'comyli')) . '\');" style="margin-left:8px;">' . esc_html__('Dateibasierte Abfragen importieren', 'comyli') . '</a>';
+        return $views;
     }
 
     public function setCustomColumns($columns) {
