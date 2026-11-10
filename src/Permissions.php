@@ -30,8 +30,13 @@ class Permissions {
 
         // 1. Check if dynamically configured in QueryManager (comyli_query post type)
         if (class_exists(__NAMESPACE__ . '\\QueryManager')) {
-            $requiredCap = QueryManager::get_query_capability($cleanName, $tableId);
-            if (!empty($requiredCap)) {
+            $post = QueryManager::find_query_post($cleanName, $tableId);
+            if ($post) {
+                $requiredCap = get_post_meta($post->ID, QueryManager::META_CAPABILITY, true);
+                if (empty($requiredCap)) {
+                    // No special capability restriction configured -> public for all
+                    return true;
+                }
                 return current_user_can($requiredCap);
             }
         }

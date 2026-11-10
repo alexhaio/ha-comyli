@@ -1660,13 +1660,12 @@ class App {
     }
 
     private function getRequestedQuery(): string {
-        $raw = isset($_GET[Security::base64urlEncode('qry')]) ? Security::unslash($_GET[Security::base64urlEncode('qry')]) : '';
-        if ($raw === '') {
-            $raw = (string)($this->config->get('query', '') ?: $this->config->get('qry', ''));
+        if (isset($_GET[Security::base64urlEncode('qry')])) {
+            $raw = Security::unslash($_GET[Security::base64urlEncode('qry')]);
+            $decoded = Security::base64urlDecode($raw);
+            return $decoded ?: $raw;
         }
-        if ($raw === '') return '';
-        $decoded = Security::base64urlDecode($raw);
-        return $decoded ?: $raw;
+        return (string)($this->config->get('query', '') ?: $this->config->get('qry', ''));
     }
 
     private function handleSyncState(string $table, array $fields, array $dbRows, int $totalRows, int $page, int $limit): void {
@@ -1768,14 +1767,14 @@ class App {
             echo "<script src='" . Security::escapeAttr($prismsql) . "'></script>";
         }
 
-        $isClean = ($this->config->get('layout') === 'clean');
+        $hasSidebar = !empty($this->config->get('listQueries')) || !empty($this->config->get('listTables'));
+        $isClean = ($this->config->get('layout') === 'clean') && !$hasSidebar;
         $layoutClass = 'comyli comyli-layout';
         if ($isClean) {
             $layoutClass .= ' comyli-clean-layout comyli-embedded-grid';
         }
         echo "<div class='$layoutClass'>";
         
-        $hasSidebar = !$isClean && ($this->config->get('listQueries') || $this->config->get('listTables'));
         if ($hasSidebar) {
             echo "<div class='comyli-sidebar'>";
             
@@ -1786,7 +1785,9 @@ class App {
                 $activeTbl = $this->getRequestedTable();
                 foreach ($this->config->getArray('tables') as $t) {
                     if (!empty($t)) {
-                        $url = "?" . Security::base64urlEncode('table') . "=" . Security::base64urlEncode($t);
+                        $url = function_exists('add_query_arg')
+                            ? esc_url(add_query_arg([Security::base64urlEncode('table') => Security::base64urlEncode($t), Security::base64urlEncode('qry') => false]))
+                            : "?" . Security::base64urlEncode('table') . "=" . Security::base64urlEncode($t);
                         $active = ($activeTbl === $t) ? 'active' : '';
                         echo "<a href='$url' class='comyli-nav-link $active'>" . Security::escapeHtml($t) . "</a>";
                     }
@@ -1794,20 +1795,76 @@ class App {
                 echo "</div></div>";
             }
 
-            if ($this->config->get('listQueries')) {
+            if (!empty($this->config->get('listQueries'))) {
                 $cptQueries = [];
                 if (class_exists('\\ha\\CoMyLi\\QueryManager')) {
-                    $tableId = (int)$this->config->get('comyli_id');
+                    $tableId = (int)($this->config->get('comyli_id') ?: ($this->config->get('id') ?: 0));
+                    $postStatus = (function_exists('current_user_can') && current_user_can('edit_posts')) ? ['publish', 'draft'] : 'publish';
+                    
                     $args = [
                         'post_type'      => \ha\CoMyLi\QueryManager::POST_TYPE,
                         'posts_per_page' => -1,
-                        'post_status'    => 'publish',
+                        'post_status'    => $postStatus,
+                        'orderby'        => 'title',
+                        'order'          => 'ASC',
                     ];
+
                     if ($tableId > 0) {
-                        $args['meta_key'] = \ha\CoMyLi\QueryManager::META_TABLE_ID;
-                        $args['meta_value'] = $tableId;
+                        $useWpDb = !empty($this->config->get('use_wp_db')) || empty($this->config->get('dbserver'));
+                        if ($useWpDb) {
+                            $args['meta_query'] = [
+                                'relation' => 'OR',
+                                [
+                                    'key'     => \ha\CoMyLi\QueryManager::META_TABLE_ID,
+                                    'value'   => $tableId,
+                                    'compare' => '=',
+                                ],
+                                [
+                                    'key'     => \ha\CoMyLi\QueryManager::META_TABLE_ID,
+                                    'value'   => 0,
+                                    'compare' => '=',
+                                ],
+                                [
+                                    'key'     => \ha\CoMyLi\QueryManager::META_TABLE_ID,
+                                    'value'   => '',
+                                    'compare' => '=',
+                                ],
+                                [
+                                    'key'     => \ha\CoMyLi\QueryManager::META_TABLE_ID,
+                                    'compare' => 'NOT EXISTS',
+                                ],
+                            ];
+                        } else {
+                            $args['meta_query'] = [
+                                [
+                                    'key'     => \ha\CoMyLi\QueryManager::META_TABLE_ID,
+                                    'value'   => $tableId,
+                                    'compare' => '=',
+                                ],
+                            ];
+                        }
+                        $cptQueries = get_posts($args);
+
+                        // If no queries specifically tied to this external table, fallback to any unassigned queries
+                        if (empty($cptQueries) && !$useWpDb) {
+                            $fallbackArgs = $args;
+                            $fallbackArgs['meta_query'] = [
+                                'relation' => 'OR',
+                                [
+                                    'key'     => \ha\CoMyLi\QueryManager::META_TABLE_ID,
+                                    'value'   => 0,
+                                    'compare' => '=',
+                                ],
+                                [
+                                    'key'     => \ha\CoMyLi\QueryManager::META_TABLE_ID,
+                                    'compare' => 'NOT EXISTS',
+                                ],
+                            ];
+                            $cptQueries = get_posts($fallbackArgs);
+                        }
+                    } else {
+                        $cptQueries = get_posts($args);
                     }
-                    $cptQueries = get_posts($args);
                 }
 
                 if (!empty($cptQueries)) {
@@ -1818,11 +1875,16 @@ class App {
 
                     foreach ($cptQueries as $cq) {
                         $slug = $cq->post_name ?: sanitize_title($cq->post_title);
-                        if (class_exists('\\ha\\CoMyLi\\Permissions') && !\ha\CoMyLi\Permissions::can_view_query($slug, $tableId > 0 ? $tableId : null)) {
-                            continue;
+                        if (class_exists('\\ha\\CoMyLi\\Permissions')) {
+                            $cap = get_post_meta($cq->ID, \ha\CoMyLi\QueryManager::META_CAPABILITY, true);
+                            if (!empty($cap) && function_exists('current_user_can') && !current_user_can('manage_options') && !current_user_can($cap)) {
+                                continue;
+                            }
                         }
-                        $url = "?" . Security::base64urlEncode('qry') . "=" . Security::base64urlEncode($slug);
-                        $active = ($activeQry === $slug) ? 'active' : '';
+                        $url = function_exists('add_query_arg')
+                            ? esc_url(add_query_arg([Security::base64urlEncode('qry') => Security::base64urlEncode($slug), Security::base64urlEncode('table') => false]))
+                            : "?" . Security::base64urlEncode('qry') . "=" . Security::base64urlEncode($slug);
+                        $active = ($activeQry === $slug || $activeQry === $cq->post_name || $activeQry === sanitize_title($cq->post_title)) ? 'active' : '';
                         echo "<div class='comyli-nav-item $active'>";
                         echo "<a href='$url' class='comyli-nav-link'>⚡ " . Security::escapeHtml($cq->post_title) . "</a>";
                         echo "</div>";

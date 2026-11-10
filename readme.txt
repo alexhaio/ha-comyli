@@ -3,7 +3,7 @@ Contributors: alexhaio, ha
 Tags: mysql, admin, table, reporting, crud, rest-api, gutenberg, chart, cron, export
 Requires at least: 6.0
 Tested up to: 6.7
-Stable tag: 3.4.0
+Stable tag: 3.4.1
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -88,6 +88,13 @@ Note: Placeholders are automatically escaped and quoted as SQL literals where ap
 4. Add tables or queries via Gutenberg blocks, shortcode `[comyli_table query="MyQuery" layout="clean"]`, or in PHP via `echo comyli_render(['query' => 'MyQuery']);`.
 
 == Changelog ==
+
+= 3.4.1 =
+* Fixed: Sidebar with available queries (`listQueries`) now properly displays in the frontend when "Verfügbare Abfragen auflisten" is enabled, resolving a conflict where default clean embedded layout suppressed the sidebar.
+* Fixed: Query resolution in table sidebar now includes both table-assigned queries and global queries (`_comyli_table_id = 0` / unassigned) for WordPress database tables.
+* Fixed: Query links in sidebar use `add_query_arg` to preserve existing URL query parameters and cleanly toggle between tables and queries.
+* Fixed: Queries without explicit capability restriction are publicly viewable without requiring the `read` capability check.
+* Improved: Only base64url-decode requested queries if passed via GET parameter, preserving plaintext shortcode query identifiers.
 
 = 3.4.0 =
 * Major Architecture: Completely retired and removed all legacy file-based query handling, directory scanning, and server filesystem fallbacks in favor of 100% database-stored QueryManager (CPT `comyli_query`) queries.
