@@ -3,7 +3,7 @@ Contributors: alexhaio, ha
 Tags: mysql, admin, table, reporting, crud, rest-api, gutenberg, chart, cron, export
 Requires at least: 6.0
 Tested up to: 6.7
-Stable tag: 3.5.0
+Stable tag: 3.5.1
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -88,6 +88,11 @@ Note: Placeholders are automatically escaped and quoted as SQL literals where ap
 4. Add tables or queries via Gutenberg blocks, shortcode `[comyli_table query="MyQuery" layout="clean"]`, or in PHP via `echo comyli_render(['query' => 'MyQuery']);`.
 
 == Changelog ==
+
+= 3.5.1 =
+* Fixed: Declared missing static property `PostType::$queryCountsCache` to prevent a PHP 8 fatal error in the `comyli` admin post list.
+* Fixed: Added `admin_notices` handler (`PostType::renderJsonValidationNotice`) to display saved JSON syntax validation errors for `_comyli_advanced_config`.
+* Fixed: Updated sticky/print table header CSS selector in `sql-admin/style.css` from `#colNames > .td` to `.comyli .comyli-colnames-row > .td`.
 
 = 3.5.0 =
 * Security: Replaced unsigned client-side `comyli_atts` REST/CSV round-tripping with HMAC-SHA256 signed `comyli_ctx` context tokens, removed `window.COMYLI_ENV.atts` exposure and plaintext `dbpass` DOM value rendering, and enforced WordPress nonce CSRF protection on row actions.

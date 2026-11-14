@@ -107,7 +107,7 @@
 }
 
 /* Sticky Header */
-#colNames > .td {
+.comyli .comyli-colnames-row > .td {
     position: sticky;
     top: 32px;
     z-index: 10;
@@ -271,8 +271,7 @@
 
 /* Print Media */
 @media print {
-    .comyli-colnames-row > .td,
-    #colNames > .td { position: static; }
+    .comyli .comyli-colnames-row > .td { position: static; }
     .comyli { border: none; box-shadow: none; margin: 0; }
     .comyli .table > .tr > .td:nth-of-type(1),
     .comyli .table > .tr.formAdd,

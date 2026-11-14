@@ -10,6 +10,9 @@ defined('ABSPATH') or die('Nope.');
 class PostType {
     private Config $config;
 
+    /** @var array<int, int>|null */
+    private static ?array $queryCountsCache = null;
+
     /**
      * @param Config $config Plugin configuration.
      */
@@ -21,6 +24,7 @@ class PostType {
         add_action('init', [$this, 'registerPostType']);
         add_action('add_meta_boxes', [$this, 'addMetaBoxes']);
         add_action('save_post_' . $this->config->plugin['type'], [$this, 'savePost']);
+        add_action('admin_notices', [$this, 'renderJsonValidationNotice']);
         add_action('admin_enqueue_scripts', [$this, 'enqueueAdminScripts']);
         
         // Custom Columns for the post list
@@ -363,6 +367,29 @@ class PostType {
             'post_content' => wp_slash(serialize($data))
         ]);
         add_action('save_post_' . $this->config->plugin['type'], [$this, 'savePost']);
+    }
+
+    /**
+     * Displays JSON validation error notices for the table advanced config metabox.
+     */
+    public function renderJsonValidationNotice(): void {
+        if (!function_exists('get_current_screen')) {
+            return;
+        }
+        $screen = get_current_screen();
+        if (!$screen || $screen->post_type !== $this->config->plugin['type'] || $screen->base !== 'post') {
+            return;
+        }
+        $postId = isset($_GET['post']) ? (int)$_GET['post'] : (int)get_the_ID();
+        if ($postId <= 0) {
+            return;
+        }
+        $tKey = 'comyli_json_error_' . $postId . '_' . get_current_user_id();
+        $err = get_transient($tKey);
+        if ($err !== false && $err !== '') {
+            delete_transient($tKey);
+            echo '<div class="notice notice-error is-dismissible"><p><strong>CoMyLi JSON-Konfigurationsfehler:</strong> ' . esc_html((string)$err) . '</p></div>';
+        }
     }
 
     public function renderCustomCssBox(\WP_Post $post): void {
