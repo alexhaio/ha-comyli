@@ -5,6 +5,8 @@ defined('ABSPATH') or die('Nope.');
 
 class Assets {
     private Config $config;
+    private static bool $registered = false;
+    private static bool $enqueued = false;
 
     public function __construct(Config $config) {
         $this->config = $config;
@@ -12,52 +14,82 @@ class Assets {
 
     public function register(): void {
         add_action('wp_enqueue_scripts', [$this, 'enqueueScripts']);
-        add_action('admin_enqueue_scripts', [$this, 'enqueueAdminScripts']);
+    }
+
+    private static function getVersion(?Config $config = null): string {
+        $version = '3.5.0';
+        $path = $config ? $config->plugin['path'] : dirname(__DIR__);
+        if (function_exists('get_file_data') && file_exists($path . '/ha-comyli.php')) {
+            $pluginData = get_file_data($path . '/ha-comyli.php', ['Version' => 'Version']);
+            if (!empty($pluginData['Version'])) {
+                $version = $pluginData['Version'];
+            }
+        }
+        return $version;
+    }
+
+    public static function registerFrontendAssets(?Config $config = null): void {
+        if (self::$registered || !function_exists('wp_register_style')) {
+            return;
+        }
+        self::$registered = true;
+
+        $url = $config ? $config->plugin['url'] : plugin_dir_url(dirname(__DIR__) . '/ha-comyli.php');
+        $version = self::getVersion($config);
+
+        wp_register_style('TA_CSS', $url . 'sql-admin/style.css', [], $version);
+        wp_register_style('TAwp_CSS', $url . 'css/style.css', ['TA_CSS'], $version);
+        wp_register_style('ha_comyli_blocks_css', $url . 'css/blocks.css', [], $version);
+        wp_register_script('TA_JS', $url . 'sql-admin/functions.js', ['jquery'], $version, ['strategy' => 'defer', 'in_footer' => true]);
+        wp_register_style('select2', $url . 'select2/select2.min.css', [], '4.0.13');
+        wp_register_script('select2', $url . 'select2/select2.min.js', ['jquery'], '4.0.13', ['strategy' => 'defer', 'in_footer' => true]);
+    }
+
+    public static function ensureFrontendEnqueued(?Config $config = null): void {
+        self::registerFrontendAssets($config);
+        if (self::$enqueued || !function_exists('wp_enqueue_style')) {
+            return;
+        }
+        self::$enqueued = true;
+
+        wp_enqueue_style('TA_CSS');
+        wp_enqueue_style('TAwp_CSS');
+        wp_enqueue_style('ha_comyli_blocks_css');
+        wp_enqueue_script('TA_JS');
+        wp_enqueue_style('select2');
+        wp_enqueue_script('select2');
     }
 
     public function enqueueScripts(): void {
-                        $url = $this->config->plugin['url'];
-        $path = $this->config->plugin['path'];
-        $version = '2.0';
-        if (function_exists('get_file_data')) {
-            $pluginData = get_file_data($path . '/ha-comyli.php', ['Version' => 'Version']);
-            if (!empty($pluginData['Version'])) {
-                $version = $pluginData['Version'];
+        self::registerFrontendAssets($this->config);
+
+        if ($this->shouldEnqueueOnCurrentPage()) {
+            self::ensureFrontendEnqueued($this->config);
+        }
+    }
+
+    private function shouldEnqueueOnCurrentPage(): bool {
+        if (is_singular($this->config->plugin['type'])) {
+            return true;
+        }
+
+        $post = get_queried_object();
+        if ($post instanceof \WP_Post) {
+            $content = (string)$post->post_content;
+            foreach (['comyli', 'comyli_table', 'comyli_query_list', 'comyli_queries', $this->config->plugin['name']] as $sc) {
+                if (has_shortcode($content, $sc)) {
+                    return true;
+                }
+            }
+            if (function_exists('has_block')) {
+                foreach (['ha-comyli/query-table', 'ha-comyli/chart', 'ha-comyli/kpi-card', 'ha-comyli/query-list'] as $blk) {
+                    if (has_block($blk, $post)) {
+                        return true;
+                    }
+                }
             }
         }
 
-        wp_register_style('TA_CSS', $url . 'sql-admin/style.css', [], $version);
-        wp_enqueue_style('TA_CSS');
-        
-        wp_register_style('TAwp_CSS', $url . 'css/style.css', [], $version);
-        wp_enqueue_style('TAwp_CSS');
-
-        wp_register_style('ha_comyli_blocks_css', $url . 'css/blocks.css', [], $version);
-        wp_enqueue_style('ha_comyli_blocks_css');
-        
-        wp_register_script('TA_JS', $url . 'sql-admin/functions.js', [], $version);
-        wp_enqueue_script('TA_JS');
-        
-        wp_register_style('select2', $url . 'select2/select2.min.css', []);
-        wp_enqueue_style('select2');
-        
-        wp_register_script('select2', $url . 'select2/select2.min.js', ['jquery'], '1.0', ['strategy' => 'defer']);
-        wp_enqueue_script('select2');
-        
-                                                    }
-
-    public function enqueueAdminScripts(): void {
-                        $url = $this->config->plugin['url'];
-        $path = $this->config->plugin['path'];
-        $version = '2.0';
-        if (function_exists('get_file_data')) {
-            $pluginData = get_file_data($path . '/ha-comyli.php', ['Version' => 'Version']);
-            if (!empty($pluginData['Version'])) {
-                $version = $pluginData['Version'];
-            }
-        }
-        
-        wp_register_style('TAadmin_CSS', $url . 'css/admin-style.css', [], $version);
-        wp_enqueue_style('TAadmin_CSS');
+        return false;
     }
 }

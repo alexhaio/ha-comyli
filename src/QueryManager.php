@@ -365,11 +365,14 @@ class QueryManager {
                 </thead>
                 <tbody>
                     <?php foreach ($archives as $arc): 
-                        $downloadUrl = add_query_arg([
-                            'action'     => 'comyli_download_archive',
-                            'query_id'   => $post->ID,
-                            'archive_id' => $arc['id'],
-                        ], admin_url('admin-post.php'));
+                        $downloadUrl = wp_nonce_url(
+                            add_query_arg([
+                                'action'     => 'comyli_download_archive',
+                                'query_id'   => $post->ID,
+                                'archive_id' => $arc['id'],
+                            ], admin_url('admin-post.php')),
+                            'comyli_download_archive_' . $post->ID
+                        );
 
                         $deleteUrl = wp_nonce_url(
                             add_query_arg([
@@ -413,10 +416,10 @@ class QueryManager {
         </div>
         <div style="background:#f8fafc; border-left:4px solid #0284c7; padding:8px 12px; font-size:12px; color:#334155;">
             <strong>Hilfreiche CSS-Selektoren für Abfrage-Ergebnisse:</strong><br>
-            <code>.comyli .td:nth-of-type(3) { font-weight: bold; }</code> (Bestimmte Spalte hervorheben)<br>
-            <code>.comyli .td:nth-of-type(4) { width: 350px; }</code> (Spaltenbreite anpassen)<br>
+            <code>.comyli .td[data-col="Spaltenname"] { font-weight: bold; }</code> (Bestimmte Spalte hervorheben)<br>
+            <code>.comyli .td[data-col="Beschreibung"] { width: 350px; }</code> (Spaltenbreite anpassen)<br>
             <code>.comyli .tr:hover { background-color: #f8fafc; }</code> (Zeilen-Highlight)<br>
-            <code>#colNames > .td { font-weight: bold; background: #e2e8f0; }</code> (Spaltenüberschriften formatieren)
+            <code>.comyli .comyli-colnames-row &gt; .td { font-weight: bold; background: #e2e8f0; }</code> (Spaltenüberschriften formatieren)
         </div>
         <script>
         jQuery(document).ready(function($) {
@@ -816,7 +819,8 @@ class QueryManager {
     public function filterPostData(array $data, array $postarr): array {
         if (($data['post_type'] ?? '') === self::POST_TYPE && isset($_POST['comyli_sql_code'])) {
             if (isset($_POST['comyli_query_nonce']) && wp_verify_nonce($_POST['comyli_query_nonce'], 'comyli_save_query_meta')) {
-                $data['post_content'] = wp_unslash($_POST['comyli_sql_code']);
+                // wp_insert_post() expects slashed data and applies wp_unslash() internally
+                $data['post_content'] = wp_slash(wp_unslash($_POST['comyli_sql_code']));
             }
         }
         return $data;
@@ -857,11 +861,24 @@ class QueryManager {
 
         $metaKeys = [self::META_TABLE_ID, self::META_CAPABILITY, self::META_DESCRIPTION, self::META_CUSTOM_CSS, self::META_CUSTOM_JS];
         foreach ($metaKeys as $metaKey) {
-            $metaVal = get_metadata('post', $revisionId, $metaKey, true);
-            if ($metaVal !== false && $metaVal !== '') {
+            if (metadata_exists('post', $revisionId, $metaKey)) {
+                $metaVal = get_metadata('post', $revisionId, $metaKey, true);
                 update_post_meta($postId, $metaKey, $metaVal);
             }
         }
+    }
+
+    /**
+     * Checks whether the current user is allowed to resolve a given query post status.
+     */
+    private static function canResolvePostStatus(\WP_Post $post): bool {
+        if ($post->post_status === 'publish') {
+            return true;
+        }
+        if ($post->post_status === 'draft' && function_exists('current_user_can') && current_user_can('edit_post', $post->ID)) {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -870,11 +887,18 @@ class QueryManager {
      */
     public static function find_query_post(string $queryIdentifier, ?int $tableId = null): ?\WP_Post {
         $clean = trim($queryIdentifier);
+        if ($clean === '') {
+            return null;
+        }
+
+        $allowedStatuses = (function_exists('current_user_can') && current_user_can('edit_posts'))
+            ? ['publish', 'draft']
+            : 'publish';
         
         // 1. By ID if numeric
         if (is_numeric($clean)) {
             $p = get_post((int)$clean);
-            if ($p && $p->post_type === self::POST_TYPE) {
+            if ($p && $p->post_type === self::POST_TYPE && self::canResolvePostStatus($p)) {
                 return $p;
             }
         }
@@ -884,12 +908,12 @@ class QueryManager {
             $tablePosts = get_posts([
                 'post_type'      => self::POST_TYPE,
                 'posts_per_page' => -1,
-                'post_status'    => ['publish', 'draft'],
+                'post_status'    => $allowedStatuses,
                 'meta_key'       => self::META_TABLE_ID,
                 'meta_value'     => $tableId,
             ]);
             foreach ($tablePosts as $tp) {
-                if ($tp->post_name === sanitize_title($clean) || strcasecmp($tp->post_title, $clean) === 0) {
+                if (($tp->post_name === sanitize_title($clean) || strcasecmp($tp->post_title, $clean) === 0) && self::canResolvePostStatus($tp)) {
                     return $tp;
                 }
             }
@@ -900,9 +924,9 @@ class QueryManager {
             'post_type'      => self::POST_TYPE,
             'name'           => sanitize_title($clean),
             'posts_per_page' => 1,
-            'post_status'    => ['publish', 'draft'],
+            'post_status'    => $allowedStatuses,
         ]);
-        if (!empty($posts)) {
+        if (!empty($posts) && self::canResolvePostStatus($posts[0])) {
             return $posts[0];
         }
 
@@ -912,9 +936,9 @@ class QueryManager {
             'post_type'      => self::POST_TYPE,
             'name'           => sanitize_title($altName),
             'posts_per_page' => 1,
-            'post_status'    => ['publish', 'draft'],
+            'post_status'    => $allowedStatuses,
         ]);
-        if (!empty($posts)) {
+        if (!empty($posts) && self::canResolvePostStatus($posts[0])) {
             return $posts[0];
         }
 
@@ -923,9 +947,9 @@ class QueryManager {
             'post_type'      => self::POST_TYPE,
             'title'          => $clean,
             'posts_per_page' => 1,
-            'post_status'    => ['publish', 'draft'],
+            'post_status'    => $allowedStatuses,
         ]);
-        if (!empty($posts)) {
+        if (!empty($posts) && self::canResolvePostStatus($posts[0])) {
             return $posts[0];
         }
 

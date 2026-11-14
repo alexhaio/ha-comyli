@@ -155,6 +155,7 @@
             valueColumn: { type: 'string', default: '' },
             title: { type: 'string', default: '' },
             height: { type: 'number', default: 350 },
+            params: { type: 'string', default: '' },
         },
         edit: function (props) {
             const { attributes, setAttributes } = props;
@@ -197,6 +198,13 @@
                             value: attributes.table,
                             options: tableOptions,
                             onChange: val => setAttributes({ table: val, query: val ? '' : attributes.query }),
+                        }),
+                        el(TextControl, {
+                            label: 'Dynamische Parameter',
+                            value: attributes.params,
+                            placeholder: 'person_id=123&status=aktiv',
+                            onChange: val => setAttributes({ params: val }),
+                            help: 'Werte für :platzhalter in der SQL-Abfrage.',
                         }),
                         el(TextControl, {
                             label: 'Beschriftungsspalte (X-Achse)',
@@ -259,6 +267,7 @@
             trendDirection: { type: 'string', default: 'up' },
             icon: { type: 'string', default: '📊' },
             color: { type: 'string', default: '#3b82f6' },
+            params: { type: 'string', default: '' },
         },
         edit: function (props) {
             const { attributes, setAttributes } = props;
@@ -304,6 +313,19 @@
                                 { label: 'Neutral (Grau)', value: 'neutral' },
                             ],
                             onChange: val => setAttributes({ trendDirection: val }),
+                        }),
+                        el('p', { style: { marginBottom: '6px', fontWeight: 500 } }, 'Akzentfarbe'),
+                        el(ColorPalette, {
+                            value: attributes.color,
+                            colors: [
+                                { name: 'Blau', color: '#3b82f6' },
+                                { name: 'Grün', color: '#10b981' },
+                                { name: 'Orange', color: '#f59e0b' },
+                                { name: 'Rot', color: '#ef4444' },
+                                { name: 'Violett', color: '#8b5cf6' },
+                                { name: 'Grau', color: '#64748b' },
+                            ],
+                            onChange: val => setAttributes({ color: val || '#3b82f6' }),
                         })
                     ),
                     el(
@@ -321,6 +343,13 @@
                             value: attributes.table,
                             options: tableOptions,
                             onChange: val => setAttributes({ table: val, query: val ? '' : attributes.query }),
+                        }),
+                        el(TextControl, {
+                            label: 'Dynamische Parameter',
+                            value: attributes.params,
+                            placeholder: 'person_id=123&status=aktiv',
+                            onChange: val => setAttributes({ params: val }),
+                            help: 'Werte für :platzhalter in der SQL-Abfrage.',
                         })
                     )
                 ),

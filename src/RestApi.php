@@ -51,70 +51,117 @@ class RestApi {
     }
 
     private function bootstrapConfig(\WP_REST_Request $request): array {
-        $postId = (int)$request->get_param('comyli_id');
+        require_once dirname(__DIR__) . '/sql-admin/index.php';
+
         $postConfig = [];
+        $ctxData = [];
+
+        $ctxToken = (string)$request->get_param('comyli_ctx');
+        if ($ctxToken !== '') {
+            $verified = Shortcode::verifyContext($ctxToken);
+            if ($verified === null) {
+                return [];
+            }
+            $ctxData = $verified;
+        }
+
+        $postId = (int)($ctxData['comyli_id'] ?? $request->get_param('comyli_id'));
 
         if ($postId > 0) {
-            $resolved = ConnectionManager::resolve_table_config($postId);
+            $resolved = ConnectionManager::resolve_table_config($postId, true);
             if ($resolved) {
                 $postConfig = $resolved;
             } else {
                 $post = get_post($postId);
-                if ($post) {
-                    $unserialized = maybe_unserialize($post->post_content);
-                    $postConfig = is_array($unserialized) ? $unserialized : [];
-                    $meta = get_post_meta($post->ID);
-                    foreach ($meta as $k => $v) {
-                        if (str_starts_with($k, '_comyli_')) {
-                            $postConfig[substr($k, 8)] = maybe_unserialize($v[0]);
-                        }
+                if ($post && ($post->post_status === 'publish' || ($post->post_status === 'draft' && current_user_can('edit_post', $post->ID)))) {
+                    if ($post->post_type === 'comyli') {
+                        return [];
                     }
+                    $tableToResolve = '';
                     if (function_exists('parse_blocks')) {
                         $blocks = parse_blocks($post->post_content);
                         foreach ($blocks as $block) {
                             if (in_array($block['blockName'] ?? '', ['comyli/table', 'ha-comyli/query-table'], true) && !empty($block['attrs'])) {
                                 $postConfig = array_merge($postConfig, $block['attrs']);
+                                if (!empty($block['attrs']['table'])) {
+                                    $tableToResolve = (string)$block['attrs']['table'];
+                                }
                             }
                         }
                     }
                     if (has_shortcode($post->post_content, 'comyli') || has_shortcode($post->post_content, 'comyli_table')) {
                         $pattern = get_shortcode_regex(['comyli', 'comyli_table']);
-                        if (preg_match_all('/' . $pattern . '/s', $post->post_content, $matches) && array_key_exists(2, $matches)) {
+                        if (preg_match_all('/' . $pattern . '/s', $post->post_content, $matches) && array_key_exists(3, $matches)) {
                             $atts = shortcode_parse_atts($matches[3][0] ?? '');
                             if (is_array($atts)) {
                                 $postConfig = array_merge($postConfig, $atts);
+                                if (!empty($atts['id'])) {
+                                    $tableToResolve = (string)$atts['id'];
+                                } elseif (!empty($atts['table'])) {
+                                    $tableToResolve = (string)$atts['table'];
+                                }
                             }
+                        }
+                    }
+                    if ($tableToResolve !== '') {
+                        $resolvedTbl = ConnectionManager::resolve_table_config($tableToResolve, true);
+                        if ($resolvedTbl) {
+                            $postConfig = array_merge($resolvedTbl, $postConfig);
+                            $postId = (int)($resolvedTbl['comyli_id'] ?? $postId);
+                        }
+                    }
+                }
+            }
+        } elseif (!empty($ctxData)) {
+            if (!empty($ctxData['table']) || !empty($ctxData['tables'])) {
+                $firstTable = trim(explode(',', (string)($ctxData['table'] ?: $ctxData['tables']))[0]);
+                $resolved = ConnectionManager::resolve_table_config($firstTable, true);
+                if ($resolved) {
+                    $postConfig = $resolved;
+                    $postId = (int)($resolved['comyli_id'] ?? 0);
+                }
+            } elseif (!empty($ctxData['query']) || !empty($ctxData['qry'])) {
+                $qIdent = (string)($ctxData['query'] ?: $ctxData['qry']);
+                $queryPost = QueryManager::find_query_post($qIdent);
+                if ($queryPost) {
+                    $tableId = (int)get_post_meta($queryPost->ID, QueryManager::META_TABLE_ID, true);
+                    if ($tableId > 0) {
+                        $resolved = ConnectionManager::resolve_table_config($tableId, true);
+                        if ($resolved) {
+                            $postConfig = $resolved;
+                            $postId = (int)($resolved['comyli_id'] ?? 0);
                         }
                     }
                 }
             }
         }
 
-        if ($request->has_param('comyli_atts')) {
-            $atts = json_decode((string)$request->get_param('comyli_atts'), true);
-            if (is_array($atts)) {
-                if (empty($postConfig) && !empty($atts['table'])) {
-                    $resolved = ConnectionManager::resolve_table_config($atts['table']);
-                    if ($resolved) {
-                        $postConfig = $resolved;
-                        $postId = (int)($resolved['comyli_id'] ?? 0);
-                    }
-                }
-                $postConfig = array_merge($postConfig, $atts);
-            }
+        if (!empty($ctxData)) {
+            $postConfig = array_merge($postConfig, $ctxData);
         }
 
         if (!empty($postConfig['table']) && empty($postConfig['tables'])) {
             $postConfig['tables'] = $postConfig['table'];
         }
 
-        if (empty($postConfig['tables']) && $postId <= 0) {
+        $hasQuery = !empty($postConfig['query']) || !empty($postConfig['qry']);
+        if (empty($postConfig['tables']) && $postId <= 0 && !$hasQuery) {
             return [];
         }
 
         $config = array_merge($this->pluginConfig->plugin, $postConfig);
         $config['comyli_id'] = $postId;
         $config['is_wp'] = true;
+        $config['prevent_auto_run'] = true;
+        $config['unslash'] = static function($value) {
+            return function_exists('wp_unslash') ? \wp_unslash($value) : stripslashes_deep($value);
+        };
+        $config['csrf_generator'] = static function(): string {
+            return function_exists('wp_create_nonce') ? wp_create_nonce('comyli_row_action') : '';
+        };
+        $config['csrf_validator'] = static function(?string $token): bool {
+            return $token !== null && function_exists('wp_verify_nonce') && (bool)wp_verify_nonce($token, 'comyli_row_action');
+        };
 
         try {
             $config['mysqli'] = ConnectionManager::get_connection_for_config($config);
@@ -122,22 +169,48 @@ class RestApi {
             return [];
         }
 
-        $tablesStr = isset($config['tables']) ? (string)$config['tables'] : '';
-        $config['tables'] = array_values(array_filter(array_map('trim', explode(',', $tablesStr))));
-        $config['stdTbl'] = $config['tables'][0] ?? ($config['table'] ?? '');
+        if (is_array($config['tables'] ?? null)) {
+            $tablesArr = array_values(array_filter(array_map('trim', $config['tables'])));
+        } else {
+            $tablesArr = array_values(array_filter(array_map('trim', explode(',', (string)($config['tables'] ?? '')))));
+        }
+        $config['tables'] = $tablesArr;
+        $config['stdTbl'] = $tablesArr[0] ?? (string)($config['table'] ?? '');
 
-        if (!empty($config['stdTbl']) && class_exists(Permissions::class)) {
-            if (!Permissions::can_view_table($config['stdTbl'])) {
-                return [];
+        $queryToCheck = (string)($config['query'] ?? ($config['qry'] ?? ''));
+        if ($queryToCheck !== '' && class_exists(Permissions::class) && !Permissions::can_view_query($queryToCheck, $postId ?: null)) {
+            return [];
+        }
+
+        if (class_exists(Permissions::class)) {
+            foreach ($tablesArr as $tblCheck) {
+                if ($tblCheck !== '' && !Permissions::can_view_table($tblCheck)) {
+                    return [];
+                }
             }
-            if (!empty($config['edit']) && !Permissions::can_edit_table($config['stdTbl'])) {
-                $config['edit'] = false;
-            }
+        }
+
+        $activeTbl = (string)($config['table'] ?: $config['stdTbl']);
+        $canEditPerm = true;
+        if ($activeTbl !== '' && class_exists(Permissions::class)) {
+            $canEditPerm = Permissions::can_edit_table($activeTbl);
+        }
+        $explicitEditFalse = array_key_exists('edit', $ctxData) && empty($ctxData['edit']);
+
+        if ($explicitEditFalse || !$canEditPerm) {
+            $config['_comyli_edit_locked'] = true;
+        }
+        if (!empty($config['edit']) && !$canEditPerm) {
+            $config['edit'] = false;
         }
 
         $config = apply_filters('comyli_config', $config, $config['stdTbl']);
         if (!empty($config['stdTbl'])) {
             $config = apply_filters('comyli_config_' . $config['stdTbl'], $config);
+        }
+
+        if (!empty($config['_comyli_edit_locked']) || !$canEditPerm) {
+            $config['edit'] = 0;
         }
 
         return $config;
@@ -151,49 +224,66 @@ class RestApi {
     public function handleHeartbeat(\WP_REST_Request $request) {
         $config = $this->bootstrapConfig($request);
         if (empty($config)) {
-            return new \WP_REST_Response('Invalid Post', 400);
+            return new \WP_REST_Response('Forbidden or Invalid Context', 403);
         }
-        
+
         $this->prepareGlobals($request);
         $_GET['action'] = 'heartbeat';
 
         require_once($this->pluginConfig->plugin['path'] . '/sql-admin/index.php');
-        
-        if (class_exists('\\Comyli\\Standalone\\App')) {
-            $app = new \Comyli\Standalone\App($config);
-            $app->run(); 
+
+        if (!class_exists('\\Comyli\\Standalone\\App')) {
+            return new \WP_REST_Response('App class not found', 500);
         }
-        
-        return new \WP_REST_Response('App class not found', 500);
+
+        ob_start();
+        $app = new \Comyli\Standalone\App($config);
+        $app->run();
+        $output = (string)ob_get_clean();
+
+        $response = new \WP_REST_Response($output, 200);
+        $response->header('Content-Type', 'text/plain; charset=utf-8');
+        return $response;
     }
 
     public function handleSyncState(\WP_REST_Request $request) {
         $config = $this->bootstrapConfig($request);
         if (empty($config)) {
-            return new \WP_REST_Response('Invalid Post', 400);
+            return new \WP_REST_Response(['error' => 'Forbidden or Invalid Context'], 403);
         }
-        
+
         $this->prepareGlobals($request);
         $_GET['action'] = 'syncState';
-        $_SERVER['REQUEST_METHOD'] = 'POST'; 
+        $_SERVER['REQUEST_METHOD'] = 'POST';
 
         require_once($this->pluginConfig->plugin['path'] . '/sql-admin/index.php');
-        
-        if (class_exists('\\Comyli\\Standalone\\App')) {
-            $app = new \Comyli\Standalone\App($config);
-            $app->run(); 
+
+        if (!class_exists('\\Comyli\\Standalone\\App')) {
+            return new \WP_REST_Response(['error' => 'App class not found'], 500);
         }
-        
-        return new \WP_REST_Response('App class not found', 500);
+
+        ob_start();
+        $app = new \Comyli\Standalone\App($config);
+        $app->run();
+        $output = (string)ob_get_clean();
+
+        $decoded = json_decode($output, true);
+        if (is_array($decoded)) {
+            return new \WP_REST_Response($decoded, 200);
+        }
+
+        $response = new \WP_REST_Response($output, 200);
+        $response->header('Content-Type', 'application/json; charset=utf-8');
+        return $response;
     }
 
     public function handleSave(\WP_REST_Request $request) {
-        ob_start();
-
         $config = $this->bootstrapConfig($request);
         if (empty($config)) {
-            ob_end_clean();
-            return new \WP_REST_Response('Invalid Post', 400);
+            return new \WP_REST_Response('Forbidden or Invalid Context', 403);
+        }
+        if (empty($config['edit'])) {
+            return new \WP_REST_Response('Keine Berechtigung zum Bearbeiten dieser Tabelle.', 403);
         }
 
         $this->prepareGlobals($request);
@@ -202,13 +292,16 @@ class RestApi {
         $config['noInterface'] = 1;
         $_GET[\Comyli\Standalone\Security::base64urlEncode('noInterface')] = '1';
         $_SERVER['REQUEST_METHOD'] = 'POST';
-        
-        if (class_exists('\\Comyli\\Standalone\\App')) {
-            $app = new \Comyli\Standalone\App($config);
-            $app->run(); 
+
+        if (!class_exists('\\Comyli\\Standalone\\App')) {
+            return new \WP_REST_Response('App class not found', 500);
         }
 
-        $output = ob_get_clean();
+        ob_start();
+        $app = new \Comyli\Standalone\App($config);
+        $app->run();
+        $output = (string)ob_get_clean();
+
         $statusCode = http_response_code() ?: 200;
         $response = new \WP_REST_Response($output, $statusCode);
         $response->header('Content-Type', 'text/plain; charset=utf-8');
@@ -224,15 +317,50 @@ class RestApi {
     }
 
     /**
+     * Resolves a configured CPT table for headless REST access (strictly rejects unconfigured tables).
+     *
+     * @return array<string, mixed>|null
+     */
+    private function resolveConfiguredRestTable(string $rawName): ?array {
+        $rawName = trim($rawName);
+        if ($rawName === '') {
+            return null;
+        }
+
+        $resolved = ConnectionManager::resolve_table_config($rawName, true);
+        if (!$resolved) {
+            return null;
+        }
+
+        $tableList = array_values(array_filter(array_map('trim', explode(',', (string)($resolved['tables'] ?? '')))));
+        $targetTable = in_array($rawName, $tableList, true) ? $rawName : ($tableList[0] ?? '');
+        $table = (string)preg_replace('/[^a-zA-Z0-9_]/', '', $targetTable);
+        if ($table === '') {
+            return null;
+        }
+
+        $resolved['_resolved_table'] = $table;
+        $resolved['_resolved_table_list'] = $tableList;
+        return $resolved;
+    }
+
+    /**
      * AP4/AP6: Permission callback for headless table endpoint.
+     * Strictly allows only tables configured as published CoMyLi CPTs (or drafts editable by current user).
      */
     public function api_check_table_permission(\WP_REST_Request $request): bool {
-        $name = (string)$request->get_param('name');
+        $rawName = (string)$request->get_param('name');
+        $resolved = $this->resolveConfiguredRestTable($rawName);
+        if (!$resolved) {
+            return false;
+        }
+
+        $table = (string)$resolved['_resolved_table'];
         $method = $request->get_method();
         if ($method === 'GET') {
-            return Permissions::can_view_table($name);
+            return Permissions::can_view_table($table);
         }
-        return Permissions::can_edit_table($name);
+        return Permissions::can_edit_table($table);
     }
 
     /**
@@ -245,6 +373,10 @@ class RestApi {
         $name = preg_replace('/[^a-zA-Z0-9_-]/', '', (string)$request->get_param('name'));
         if (empty($name)) {
             return new \WP_REST_Response(['error' => 'Ungültiger Abfragename.'], 400);
+        }
+
+        if (!Permissions::can_view_query($name)) {
+            return new \WP_REST_Response(['error' => 'Keine Berechtigung zum Ausführen dieser Abfrage.'], 403);
         }
 
         require_once dirname(__DIR__) . '/sql-admin/index.php';
@@ -270,13 +402,13 @@ class RestApi {
         $limit = max(1, min(500, (int)$request->get_param('limit') ?: 25));
         $offset = ($page - 1) * $limit;
 
-        // Total count
-        $countSql = "SELECT COUNT(*) FROM ($sql) AS count_subq";
+        // Total count (newline guards trailing SQL -- comments)
+        $countSql = "SELECT COUNT(*) FROM ($sql\n) AS count_subq";
         $countRes = $mysqli ? $mysqli->query($countSql) : null;
         $totalRows = ($countRes && $r = $countRes->fetch_row()) ? (int)$r[0] : 0;
 
         // Data query
-        $dataSql = "SELECT * FROM ($sql) AS data_subq LIMIT $limit OFFSET $offset";
+        $dataSql = "SELECT * FROM ($sql\n) AS data_subq LIMIT $limit OFFSET $offset";
         $dataRes = $mysqli ? $mysqli->query($dataSql) : null;
 
         if (!$dataRes) {
@@ -313,40 +445,72 @@ class RestApi {
     }
 
     /**
-     * AP4: Headless REST-API Table Operations (CRUD).
+     * Checks whether a column is allowed by limit_cols configuration.
+     *
+     * @param array<string, mixed> $config
+     */
+    private function isRestColumnVisible(array $config, string $table, string $colname): bool {
+        $limits = $config['limit_cols'] ?? [];
+        if (!is_array($limits) || !isset($limits[$table]) || !is_array($limits[$table])) {
+            return true;
+        }
+        if (isset($limits[$table][$colname]) && $limits[$table][$colname] === true) {
+            return true;
+        }
+        return in_array($colname, $limits[$table], true);
+    }
+
+    /**
+     * AP4: Headless REST-API Table Operations (CRUD) - strictly restricted to configured CPT tables.
      *
      * @param \WP_REST_Request $request
      * @return \WP_REST_Response
      */
     public function api_handle_table(\WP_REST_Request $request) {
-        $rawName = trim((string)$request->get_param('name'));
-        $resolved = ConnectionManager::resolve_table_config($rawName);
-
-        $targetTable = $rawName;
-        if ($resolved && !empty($resolved['tables'])) {
-            $tableList = array_values(array_filter(array_map('trim', explode(',', (string)$resolved['tables']))));
-            if (!empty($tableList[0])) {
-                $targetTable = $tableList[0];
-            }
+        $rawName = (string)$request->get_param('name');
+        $resolved = $this->resolveConfiguredRestTable($rawName);
+        if (!$resolved) {
+            return new \WP_REST_Response(['error' => 'Tabelle ist nicht über CoMyLi konfiguriert.'], 403);
         }
 
-        $table = preg_replace('/[^a-zA-Z0-9_]/', '', $targetTable);
-        if (empty($table)) {
-            return new \WP_REST_Response(['error' => 'Ungültiger Tabellenname.'], 400);
-        }
+        $table = (string)$resolved['_resolved_table'];
+        $tableList = (array)$resolved['_resolved_table_list'];
+        unset($resolved['_resolved_table'], $resolved['_resolved_table_list']);
 
         require_once dirname(__DIR__) . '/sql-admin/index.php';
 
         try {
-            $mysqli = $resolved
-                ? ConnectionManager::get_connection_for_config($resolved)
-                : ConnectionManager::get_connection_for_table($table);
+            $mysqli = ConnectionManager::get_connection_for_config($resolved);
         } catch (\Exception $e) {
             return new \WP_REST_Response(['error' => 'Datenbankfehler: ' . $e->getMessage()], 500);
         }
 
-        $db = new \Comyli\Standalone\Database($mysqli);
         $method = $request->get_method();
+        $canEditPerm = Permissions::can_edit_table($table);
+
+        // Apply declarative JSON config & filters (access_rules, visible_columns, readonly, valueH, postOverride)
+        $config = array_merge($this->pluginConfig->plugin, $resolved);
+        $config['mysqli'] = $mysqli;
+        $config['is_wp'] = true;
+        $config['tables'] = $tableList;
+        $config['stdTbl'] = $table;
+        $config['edit'] = $canEditPerm ? 1 : 0;
+        if (!$canEditPerm) {
+            $config['_comyli_edit_locked'] = true;
+        }
+
+        $config = apply_filters('comyli_config', $config, $table);
+        $config = apply_filters('comyli_config_' . $table, $config);
+
+        if (!empty($config['_comyli_edit_locked']) || !$canEditPerm) {
+            $config['edit'] = 0;
+        }
+
+        if ($method !== 'GET' && empty($config['edit'])) {
+            return new \WP_REST_Response(['error' => 'Keine Berechtigung zum Bearbeiten dieser Tabelle.'], 403);
+        }
+
+        $db = new \Comyli\Standalone\Database($mysqli);
 
         // Introspect columns and primary key
         $colRes = $db->query("SHOW COLUMNS FROM `$table`");
@@ -356,6 +520,7 @@ class RestApi {
 
         $columns = [];
         $validCols = [];
+        $visibleCols = [];
         $pkCol = 'id';
         while ($col = $colRes->fetch_assoc()) {
             $fieldName = (string)$col['Field'];
@@ -364,6 +529,11 @@ class RestApi {
             if ($isPri) {
                 $pkCol = $fieldName;
             }
+
+            if (!$this->isRestColumnVisible($config, $table, $fieldName)) {
+                continue;
+            }
+            $visibleCols[$fieldName] = true;
 
             $typeStr = strtolower($col['Type'] ?? '');
             $type = 'string';
@@ -384,10 +554,14 @@ class RestApi {
             $limit = max(1, min(500, (int)$request->get_param('limit') ?: 25));
             $offset = ($page - 1) * $limit;
 
+            $selectList = !empty($visibleCols)
+                ? implode(', ', array_map(static fn($c) => "`$c`", array_keys($visibleCols)))
+                : '*';
+
             $countRes = $db->query("SELECT COUNT(*) FROM `$table`");
             $totalRows = ($countRes instanceof \mysqli_result && ($r = $countRes->fetch_row())) ? (int)$r[0] : 0;
 
-            $dataRes = $db->query("SELECT * FROM `$table` LIMIT $limit OFFSET $offset");
+            $dataRes = $db->query("SELECT $selectList FROM `$table` LIMIT $limit OFFSET $offset");
             $rows = [];
             if ($dataRes instanceof \mysqli_result) {
                 while ($row = $dataRes->fetch_assoc()) {
@@ -405,25 +579,76 @@ class RestApi {
             ], 200);
         }
 
+        $readonlyCols = is_array($config['readonly'] ?? null) ? $config['readonly'] : [];
+        $forcedValues = is_array($config['valueH'] ?? null) ? $config['valueH'] : [];
+        $postOverrides = is_array($config['postOverride'] ?? null) ? $config['postOverride'] : [];
+        $postOverrideRaw = is_array($config['postOverrideRaw'] ?? null) ? $config['postOverrideRaw'] : [];
+        $currentUserLogin = (function_exists('wp_get_current_user') && wp_get_current_user()->exists())
+            ? wp_get_current_user()->user_login
+            : 'System';
+
         if ($method === 'POST') {
             $data = $request->get_json_params() ?: $request->get_body_params();
             if (empty($data) || !is_array($data)) {
                 return new \WP_REST_Response(['error' => 'Keine Daten übergeben.'], 400);
             }
 
+            // Filter writable submitted fields (enforce visible + not readonly + not forced)
+            $writeData = [];
+            foreach ($data as $k => $v) {
+                if (!isset($validCols[$k]) || !isset($visibleCols[$k])) {
+                    continue;
+                }
+                if (!empty($readonlyCols[$k]) || isset($forcedValues[$k]) || in_array($k, ['lastChanged', 'lstChanged', 'lastChangedUser'], true)) {
+                    continue;
+                }
+                $writeData[$k] = $v;
+            }
+
+            // Apply forced hidden values (valueH)
+            foreach ($forcedValues as $fk => $fv) {
+                if (isset($validCols[$fk])) {
+                    $writeData[$fk] = $fv;
+                }
+            }
+
+            // Apply dynamic post_override on insert
+            $evalContext = ['stdTbl' => $table, 'columns' => $writeData];
+            foreach ($postOverrideRaw as $ok => $rawTpl) {
+                if (isset($validCols[$ok])) {
+                    $writeData[$ok] = ConfigResolver::resolveTokens($rawTpl, $evalContext, $mysqli);
+                    $evalContext['columns'][$ok] = $writeData[$ok];
+                }
+            }
+            foreach ($postOverrides as $ok => $ov) {
+                if (!isset($postOverrideRaw[$ok]) && isset($validCols[$ok])) {
+                    $writeData[$ok] = $ov;
+                }
+            }
+
             $cols = [];
             $placeholders = [];
             $params = [];
-            foreach ($data as $k => $v) {
-                if (isset($validCols[$k])) {
-                    $cols[] = "`$k`";
-                    if ($v === null) {
-                        $placeholders[] = 'NULL';
-                    } else {
-                        $placeholders[] = '?';
-                        $params[] = $v;
-                    }
+            foreach ($writeData as $k => $v) {
+                $cols[] = "`$k`";
+                if ($v === null) {
+                    $placeholders[] = 'NULL';
+                } else {
+                    $placeholders[] = '?';
+                    $params[] = $v;
                 }
+            }
+
+            foreach (['lastChanged', 'lstChanged'] as $lcName) {
+                if (isset($validCols[$lcName])) {
+                    $cols[] = "`$lcName`";
+                    $placeholders[] = 'CURRENT_TIMESTAMP';
+                }
+            }
+            if (isset($validCols['lastChangedUser'])) {
+                $cols[] = "`lastChangedUser`";
+                $placeholders[] = '?';
+                $params[] = $currentUserLogin;
             }
 
             if (empty($cols)) {
@@ -453,18 +678,45 @@ class RestApi {
                 return new \WP_REST_Response(['error' => "Primärschlüssel '$pkCol' erforderlich."], 400);
             }
 
-            unset($data[$pkCol]);
+            if (empty($config['primaryEdit'])) {
+                unset($data[$pkCol]);
+            }
+
+            $writeData = [];
+            foreach ($data as $k => $v) {
+                if (!isset($validCols[$k]) || !isset($visibleCols[$k])) {
+                    continue;
+                }
+                if (!empty($readonlyCols[$k]) || isset($forcedValues[$k]) || in_array($k, ['lastChanged', 'lstChanged', 'lastChangedUser'], true)) {
+                    continue;
+                }
+                $writeData[$k] = $v;
+            }
+            foreach ($forcedValues as $fk => $fv) {
+                if (isset($validCols[$fk]) && $fk !== $pkCol) {
+                    $writeData[$fk] = $fv;
+                }
+            }
+
             $sets = [];
             $params = [];
-            foreach ($data as $k => $v) {
-                if (isset($validCols[$k])) {
-                    if ($v === null) {
-                        $sets[] = "`$k` = NULL";
-                    } else {
-                        $sets[] = "`$k` = ?";
-                        $params[] = $v;
-                    }
+            foreach ($writeData as $k => $v) {
+                if ($v === null) {
+                    $sets[] = "`$k` = NULL";
+                } else {
+                    $sets[] = "`$k` = ?";
+                    $params[] = $v;
                 }
+            }
+
+            foreach (['lastChanged', 'lstChanged'] as $lcName) {
+                if (isset($validCols[$lcName]) && !empty($sets)) {
+                    $sets[] = "`$lcName` = CURRENT_TIMESTAMP";
+                }
+            }
+            if (isset($validCols['lastChangedUser']) && !empty($sets)) {
+                $sets[] = "`lastChangedUser` = ?";
+                $params[] = $currentUserLogin;
             }
 
             if (empty($sets)) {

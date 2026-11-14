@@ -83,12 +83,14 @@ class QueryScheduler {
 
             // Execute if nextRun is past or never set
             if ($nextRun === 0 || $now >= $nextRun) {
-                $this->archiveQuery($post->ID);
+                $result = $this->archiveQuery($post->ID);
 
-                // Compute next run time
+                // Compute next run time (always schedule next slot; archiveQuery updates META_LAST_RUN only on success)
                 $next = $this->calculateNextRunTime($interval, $now);
-                update_post_meta($post->ID, self::META_LAST_RUN, $now);
                 update_post_meta($post->ID, self::META_NEXT_RUN, $next);
+                if (empty($result['success'])) {
+                    error_log('CoMyLi QueryScheduler Fehler (Query #' . $post->ID . '): ' . ($result['message'] ?? 'Unbekannter Fehler'));
+                }
             }
         }
     }
@@ -134,12 +136,29 @@ class QueryScheduler {
             return ['success' => false, 'message' => 'Datenbankfehler: ' . $e->getMessage()];
         }
 
-        // Resolve dynamic context parameters
+        // Resolve nested [QRY] markers and dynamic context parameters (trusted internal execution)
         require_once $this->config->plugin['path'] . '/sql-admin/index.php';
         $cfg = $this->config->plugin;
         $cfg['mysqli'] = $conn;
+        $cfg['skip_perm_check'] = true;
+        $tableId = (int)get_post_meta($queryId, QueryManager::META_TABLE_ID, true);
+        if ($tableId > 0) {
+            $cfg['comyli_id'] = $tableId;
+        }
         $configHandler = new \Comyli\Standalone\ConfigHandler($cfg);
-        $resolvedSql = rtrim(trim(\Comyli\Standalone\FieldHandler::resolveParameters($sql, $configHandler)), "; \t\n\r\0\x0B");
+        $resolvedSql = \Comyli\Standalone\FieldHandler::resolveSQL((string)$queryId, $configHandler);
+        if (empty($resolvedSql)) {
+            $resolvedSql = rtrim(trim(\Comyli\Standalone\FieldHandler::resolveParameters($sql, $configHandler)), "; \t\n\r\0\x0B");
+        }
+
+        // Detect unbound :param_name placeholders outside SQL string literals
+        $sqlWithoutStrings = preg_replace("/'(?:\\\\.|''|[^'])*'|\"(?:\\\\.|\"\"|[^\"])*\"/", '', $resolvedSql);
+        if (is_string($sqlWithoutStrings) && preg_match('/(?<![a-zA-Z0-9_]):([a-zA-Z_][a-zA-Z0-9_]*)/', $sqlWithoutStrings, $unbound)) {
+            return [
+                'success' => false,
+                'message' => 'Ungebundener SQL-Parameter :' . $unbound[1] . ' kann bei der automatischen Archivierung nicht aufgelöst werden.',
+            ];
+        }
 
         $res = @$conn->query($resolvedSql);
         if (!$res || !($res instanceof \mysqli_result)) {
@@ -157,7 +176,6 @@ class QueryScheduler {
             @file_put_contents($baseDir . '.htaccess', "Order Deny,Allow\nDeny from all\n<IfModule mod_authz_core.c>\nRequire all denied\n</IfModule>");
         }
 
-        $tableId = (int)get_post_meta($queryId, QueryManager::META_TABLE_ID, true);
         $nameParts = [];
         if ($tableId > 0) {
             $tablePost = get_post($tableId);
@@ -177,7 +195,8 @@ class QueryScheduler {
 
         $baseName = !empty($nameParts) ? implode('_', $nameParts) : 'abfrage_' . $queryId;
         $baseName = preg_replace('/_+/', '_', trim($baseName, '_'));
-        $filename = $baseName . '_' . gmdate('Y-m-d_H-i-s') . '.csv';
+        $timestamp = function_exists('wp_date') ? wp_date('Y-m-d_H-i-s') : gmdate('Y-m-d_H-i-s');
+        $filename = $baseName . '_' . $timestamp . '.csv';
         $filePath = $baseDir . $filename;
 
         $fp = @fopen($filePath, 'w');
@@ -288,14 +307,19 @@ class QueryScheduler {
             wp_die('Ungültige Anfrage.');
         }
 
+        check_admin_referer('comyli_download_archive_' . $queryId);
+
         $post = get_post($queryId);
         if (!$post || $post->post_type !== QueryManager::POST_TYPE) {
             wp_die('Abfrage nicht gefunden.');
         }
 
-        // Capability check
-        $slug = $post->post_name ?: 'abfrage-' . $post->ID;
-        if (!current_user_can('manage_options') && !Permissions::can_view_query($slug)) {
+        // Direct capability check against the loaded query post
+        $requiredCap = get_post_meta($post->ID, QueryManager::META_CAPABILITY, true);
+        $hasAccess = current_user_can('manage_options')
+            || empty($requiredCap)
+            || current_user_can($requiredCap);
+        if (!$hasAccess) {
             wp_die('Keine Berechtigung zum Herunterladen dieses Abfrage-Archivs.');
         }
 

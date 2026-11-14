@@ -8,17 +8,44 @@ defined('ABSPATH') or die('Nope.');
  * Ensures queries and tables execute on their designated external or local database.
  */
 class ConnectionManager {
+    /** @var array<string, array<string, mixed>|null> */
+    private static array $configCache = [];
+
+    /** @var array<string, \mysqli> */
+    private static array $connectionCache = [];
+
+    /** @var array<int, \WP_Post>|null */
+    private static ?array $allTablePostsCache = null;
+
+    /**
+     * Checks if a resolved comyli post is accessible to the current user based on post_status.
+     */
+    private static function canAccessTablePost(\WP_Post $post): bool {
+        if ($post->post_status === 'publish') {
+            return true;
+        }
+        if ($post->post_status === 'draft' && function_exists('current_user_can') && current_user_can('edit_post', $post->ID)) {
+            return true;
+        }
+        return false;
+    }
 
     /**
      * Resolves configuration and database credentials for a table by its post ID, slug, or table name.
      *
      * @param string|int $tableOrId Table name, post slug, or post ID.
+     * @param bool $respectStatus Whether to exclude draft posts for users without edit_post capability.
      * @return array<string, mixed>|null Resolved config array, or null if not found.
      */
-    public static function resolve_table_config(string|int $tableOrId): ?array {
+    public static function resolve_table_config(string|int $tableOrId, bool $respectStatus = false): ?array {
         $tableOrId = is_string($tableOrId) ? trim($tableOrId) : $tableOrId;
         if ($tableOrId === '' || $tableOrId === 0) {
             return null;
+        }
+
+        $cacheKey = ($respectStatus ? 'pub:' : 'all:') . (string)$tableOrId;
+        if (array_key_exists($cacheKey, self::$configCache)) {
+            return self::$configCache[$cacheKey];
         }
 
         $post = null;
@@ -27,7 +54,9 @@ class ConnectionManager {
         if (is_numeric($tableOrId) && (int)$tableOrId > 0) {
             $candidate = get_post((int)$tableOrId);
             if ($candidate && $candidate->post_type === 'comyli') {
-                $post = $candidate;
+                if (!$respectStatus || self::canAccessTablePost($candidate)) {
+                    $post = $candidate;
+                }
             }
         }
 
@@ -39,21 +68,25 @@ class ConnectionManager {
                 'posts_per_page' => 1,
                 'post_status'    => ['publish', 'draft'],
             ]);
-            if (!empty($posts)) {
+            if (!empty($posts) && (!$respectStatus || self::canAccessTablePost($posts[0]))) {
                 $post = $posts[0];
             }
         }
 
-        // 3. By matching table name in _comyli_tables or post_content
+        // 3. By matching table name in _comyli_tables or post_content (cached per request)
         if (!$post && is_string($tableOrId)) {
-            // First check by direct meta match
-            $posts = get_posts([
-                'post_type'      => 'comyli',
-                'posts_per_page' => -1,
-                'post_status'    => ['publish', 'draft'],
-            ]);
+            if (self::$allTablePostsCache === null) {
+                self::$allTablePostsCache = get_posts([
+                    'post_type'      => 'comyli',
+                    'posts_per_page' => -1,
+                    'post_status'    => ['publish', 'draft'],
+                ]);
+            }
 
-            foreach ($posts as $p) {
+            foreach (self::$allTablePostsCache as $p) {
+                if ($respectStatus && !self::canAccessTablePost($p)) {
+                    continue;
+                }
                 $metaTables = (string)get_post_meta($p->ID, '_comyli_tables', true);
                 if (empty($metaTables)) {
                     $unserialized = maybe_unserialize($p->post_content);
@@ -71,6 +104,7 @@ class ConnectionManager {
         }
 
         if (!$post) {
+            self::$configCache[$cacheKey] = null;
             return null;
         }
 
@@ -89,9 +123,10 @@ class ConnectionManager {
             }
         }
 
-        $config['comyli_id'] = $post->ID;
-        $config['post_title'] = $post->post_title;
-        $config['post_name']  = $post->post_name;
+        $config['comyli_id']   = $post->ID;
+        $config['post_title']  = $post->post_title;
+        $config['post_name']   = $post->post_name;
+        $config['post_status'] = $post->post_status;
 
         // Normalize use_wp_db boolean
         if (isset($config['use_wp_db'])) {
@@ -102,11 +137,12 @@ class ConnectionManager {
             $config['use_wp_db'] = empty($config['dbserver']);
         }
 
+        self::$configCache[$cacheKey] = $config;
         return $config;
     }
 
     /**
-     * Creates or returns a mysqli connection object for the given configuration.
+     * Creates or returns a cached mysqli connection object for the given configuration.
      *
      * @param array<string, mixed> $config Configuration array.
      * @return \mysqli
@@ -122,11 +158,16 @@ class ConnectionManager {
             }
 
             if (defined('DB_HOST') && defined('DB_USER') && defined('DB_PASSWORD') && defined('DB_NAME')) {
+                $connKey = 'local_wpdb';
+                if (isset(self::$connectionCache[$connKey])) {
+                    return self::$connectionCache[$connKey];
+                }
                 $mysqli = @new \mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
                 if ($mysqli->connect_error) {
                     throw new \Exception('Lokale WordPress-Datenbankverbindung fehlgeschlagen: ' . $mysqli->connect_error);
                 }
                 @$mysqli->query("SET character_set_results = 'utf8mb4', character_set_client = 'utf8mb4', character_set_connection = 'utf8mb4', character_set_database = 'utf8mb4', character_set_server = 'utf8mb4'");
+                self::$connectionCache[$connKey] = $mysqli;
                 return $mysqli;
             }
 
@@ -146,6 +187,11 @@ class ConnectionManager {
             $port = (int)($parts[1] ?? 3306);
         }
 
+        $connKey = hash('sha256', "$host|$port|$dbuser|$db|$dbpass");
+        if (isset(self::$connectionCache[$connKey])) {
+            return self::$connectionCache[$connKey];
+        }
+
         $mysqli = @new \mysqli($host, $dbuser, $dbpass, $db, $port);
         if ($mysqli->connect_error) {
             throw new \Exception("Verbindung zur externen Datenbank ($host) fehlgeschlagen: " . $mysqli->connect_error);
@@ -153,6 +199,7 @@ class ConnectionManager {
 
         @$mysqli->query("SET character_set_results = 'utf8mb4', character_set_client = 'utf8mb4', character_set_connection = 'utf8mb4', character_set_database = 'utf8mb4', character_set_server = 'utf8mb4'");
 
+        self::$connectionCache[$connKey] = $mysqli;
         return $mysqli;
     }
 

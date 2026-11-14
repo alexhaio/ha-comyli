@@ -39,6 +39,18 @@ class Permissions {
                 }
                 return current_user_can($requiredCap);
             }
+
+            // Deny if the query exists only as an unpublished draft and user cannot edit it
+            $draftCheck = get_posts([
+                'post_type'      => QueryManager::POST_TYPE,
+                'name'           => sanitize_title($cleanName),
+                'post_status'    => ['draft', 'pending', 'private', 'trash'],
+                'posts_per_page' => 1,
+                'fields'         => 'ids',
+            ]);
+            if (!empty($draftCheck) && !current_user_can('edit_post', $draftCheck[0])) {
+                return false;
+            }
         }
 
         // 2. Filter fallback

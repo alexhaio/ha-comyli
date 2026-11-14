@@ -266,6 +266,13 @@ class PostType {
         if ($type === 'checkbox') {
             $checked = (!empty($val) && $val !== '0') ? 'checked' : '';
             echo "<input type='checkbox' id='$name' name='$name' value='1' $checked>";
+        } elseif ($type === 'password') {
+            $hasExisting = ((string)$val !== '');
+            $placeholder = $hasExisting ? '•••••••• (gespeichert – leer lassen um beizubehalten)' : '';
+            echo "<input type='password' id='$name' name='$name' value='' autocomplete='new-password' placeholder='" . esc_attr($placeholder) . "' class='regular-text'>";
+            if ($hasExisting) {
+                echo " <label style='margin-left:8px; font-size:12px;'><input type='checkbox' name='comyli_dbpass_clear' value='1'> Passwort löschen</label>";
+            }
         } else {
             echo "<input type='$type' id='$name' name='$name' value='" . esc_attr($val) . "' class='regular-text'>";
         }
@@ -286,7 +293,23 @@ class PostType {
             return;
         }
 
-        $dbpass = isset($_POST['comyli_dbpass']) ? wp_unslash($_POST['comyli_dbpass']) : '';
+        // Preserve existing password unless explicitly changed or cleared
+        if (!empty($_POST['comyli_dbpass_clear'])) {
+            $dbpass = '';
+        } elseif (isset($_POST['comyli_dbpass']) && wp_unslash($_POST['comyli_dbpass']) !== '') {
+            $dbpass = wp_unslash($_POST['comyli_dbpass']);
+        } else {
+            $dbpass = (string)get_post_meta($post_id, '_comyli_dbpass', true);
+            if ($dbpass === '') {
+                $existingPost = get_post($post_id);
+                if ($existingPost) {
+                    $unser = maybe_unserialize($existingPost->post_content);
+                    if (is_array($unser) && isset($unser['dbpass'])) {
+                        $dbpass = (string)$unser['dbpass'];
+                    }
+                }
+            }
+        }
 
         $data = [
             'use_wp_db'   => isset($_POST['comyli_use_wp_db']) ? 1 : 0,
@@ -295,7 +318,7 @@ class PostType {
             'dbpass'      => $dbpass,
             'dbserver'    => sanitize_text_field($_POST['comyli_dbserver'] ?? ''),
             'tables'      => sanitize_text_field($_POST['comyli_tables'] ?? ''),
-            'limit'       => intval($_POST['comyli_limit'] ?? 100),
+            'limit'       => max(1, intval($_POST['comyli_limit'] ?? 100)),
             'edit'        => isset($_POST['comyli_edit']) ? 1 : 0,
             'primaryEdit' => isset($_POST['comyli_primaryEdit']) ? 1 : 0,
             'listQueries' => isset($_POST['comyli_listQueries']) ? 1 : 0,
@@ -313,7 +336,20 @@ class PostType {
         $data['custom_js'] = $customJs;
 
         $rawAdvanced = isset($_POST['comyli_advanced_config']) ? wp_unslash($_POST['comyli_advanced_config']) : '';
-        $data['advanced_config'] = trim($rawAdvanced);
+        $trimmedAdvanced = trim($rawAdvanced);
+        $data['advanced_config'] = $trimmedAdvanced;
+
+        $tKey = 'comyli_json_error_' . $post_id . '_' . get_current_user_id();
+        if ($trimmedAdvanced !== '') {
+            json_decode($trimmedAdvanced, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                set_transient($tKey, json_last_error_msg(), 60);
+            } else {
+                delete_transient($tKey);
+            }
+        } else {
+            delete_transient($tKey);
+        }
 
         // Save to individual post meta fields
         foreach ($data as $key => $val) {
@@ -347,10 +383,10 @@ class PostType {
         </div>
         <div style="background:#f8fafc; border-left:4px solid #0284c7; padding:8px 12px; font-size:12px; color:#334155;">
             <strong>Hilfreiche CSS-Selektoren für Tabellendesign:</strong><br>
-            <code>.comyli .td:nth-of-type(2) { width: 150px; }</code> (Spaltenbreite anpassen)<br>
-            <code>.comyli .td:nth-of-type(1) { position: sticky; left: 0; background: inherit; z-index: 6; }</code> (Spalte horizontal fixieren)<br>
+            <code>.comyli .td[data-col="Spaltenname"] { width: 150px; }</code> (Spaltenbreite anpassen)<br>
+            <code>.comyli .td[data-col="_actions"] { position: sticky; left: 0; background: inherit; z-index: 6; }</code> (Aktionsspalte horizontal fixieren)<br>
             <code>.comyli .tr:hover { background-color: #f1f5f9; }</code> (Zeilen-Hover hervorheben)<br>
-            <code>#colNames > .td { font-weight: bold; background: #e2e8f0; }</code> (Spaltenüberschriften formatieren)
+            <code>.comyli .comyli-colnames-row &gt; .td { font-weight: bold; background: #e2e8f0; }</code> (Spaltenüberschriften formatieren)
         </div>
         <script>
         jQuery(document).ready(function($) {
@@ -440,24 +476,6 @@ class PostType {
                 $advancedConfig = (string)$unserialized['advanced_config'];
             }
         }
-
-        // If empty, check if this table matches any built-in preset
-        if ($advancedConfig === '') {
-            $metaTables = (string)get_post_meta($post->ID, '_comyli_tables', true);
-            if (empty($metaTables)) {
-                $unserialized = maybe_unserialize($post->post_content);
-                if (is_array($unserialized) && !empty($unserialized['tables'])) {
-                    $metaTables = (string)$unserialized['tables'];
-                }
-            }
-            $table = trim(explode(',', $metaTables)[0] ?? '');
-            if (!empty($table)) {
-                $preset = ConfigResolver::getBuiltinPreset($table);
-                if ($preset !== null) {
-                    $advancedConfig = wp_json_encode($preset, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-                }
-            }
-        }
         ?>
         <div style="margin-bottom:12px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
@@ -481,10 +499,10 @@ class PostType {
 
                 <strong>Hauptbereiche im JSON-Schema:</strong>
                 <ul style="margin:4px 0 0 18px; list-style-type:disc;">
-                    <li><code>ui</code>: <code>stdQry</code>, <code>insert_top</code> (true/false), <code>default_order</code>, <code>default_dir</code>, <code>auto_audit_columns</code></li>
+                    <li><code>ui</code>: <code>stdQry</code>, <code>insert_top</code> (true/false), <code>insert_bottom</code> (true/false), <code>default_order</code>, <code>default_dir</code>, <code>auto_audit_columns</code></li>
                     <li><code>columns</code>: <code>[Spalte]: { default, forced, post_override, readonly, min, max, step, pattern, attr }</code></li>
                     <li><code>foreign_keys</code>: <code>[Spalte]: { source: "sql"|"wp_option"|"wp_users", query, option, property, mode: "input"|"suggestion" }</code></li>
-                    <li><code>access_rules</code>: Array von Regeln <code>{ capabilities: ["..."], edit: true|false, visible_columns: [...], custom_css: "..." }</code></li>
+                    <li><code>access_rules</code>: Array von Regeln <code>{ capabilities: ["..."], edit: true|false, visible_columns: [...], readonly_columns: [...], custom_css: "..." }</code></li>
                     <li><code>readonly_unless_capability</code>: <code>{ capability: "...", columns: [...] }</code></li>
                     <li><code>maintenance</code>: <code>{ ensure_quarterly_dates: { table, years_ahead, months, day } }</code></li>
                 </ul>
@@ -573,14 +591,27 @@ class PostType {
                 echo '<strong>' . esc_html($db ?: 'extern') . '</strong><br><span style="color:#64748b; font-size:11px;">@ ' . esc_html($dbServer) . '</span>';
             }
         } elseif ($column === 'comyli_queries_count') {
-            $count = count(get_posts([
-                'post_type'      => QueryManager::POST_TYPE,
-                'posts_per_page' => -1,
-                'post_status'    => ['publish', 'draft'],
-                'meta_key'       => QueryManager::META_TABLE_ID,
-                'meta_value'     => $post_id,
-                'fields'         => 'ids',
-            ]));
+            if (self::$queryCountsCache === null) {
+                global $wpdb;
+                self::$queryCountsCache = [];
+                if ($wpdb) {
+                    $rows = $wpdb->get_results($wpdb->prepare(
+                        "SELECT pm.meta_value AS table_id, COUNT(p.ID) AS cnt
+                         FROM {$wpdb->postmeta} pm
+                         INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+                         WHERE pm.meta_key = %s AND p.post_type = %s AND p.post_status IN ('publish', 'draft')
+                         GROUP BY pm.meta_value",
+                        QueryManager::META_TABLE_ID,
+                        QueryManager::POST_TYPE
+                    ));
+                    if (is_array($rows)) {
+                        foreach ($rows as $r) {
+                            self::$queryCountsCache[(int)$r->table_id] = (int)$r->cnt;
+                        }
+                    }
+                }
+            }
+            $count = self::$queryCountsCache[(int)$post_id] ?? 0;
             echo $count > 0 ? '<strong>' . $count . ' Abfrage(n)</strong>' : '<span style="color:#94a3b8;">—</span>';
         } elseif ($column === 'comyli_shortcode') {
             $shortcode = str_replace('{{id}}', (string)$post_id, $this->config->plugin['replaceReplace']);

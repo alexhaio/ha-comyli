@@ -113,7 +113,11 @@ class ConfigResolver {
 
                 // Post override on insert (postOverride)
                 if (isset($colSettings['post_override'])) {
-                    $config['postOverride'][$colName] = self::resolveTokens($colSettings['post_override'], $context, $mysqli);
+                    $rawOverride = $colSettings['post_override'];
+                    if (is_string($rawOverride) && (str_contains($rawOverride, '{column:') || preg_match('/\{sql(?:_pad\d+)?:/i', $rawOverride))) {
+                        $config['postOverrideRaw'][$colName] = $rawOverride;
+                    }
+                    $config['postOverride'][$colName] = self::resolveTokens($rawOverride, $context, $mysqli);
                 }
 
                 // Readonly
@@ -271,9 +275,9 @@ class ConfigResolver {
                 }
 
                 if ($ruleMatches) {
-                    // Edit permission
+                    // Edit permission (respect explicit or permission locks)
                     if (isset($rule['edit'])) {
-                        $config['edit'] = !empty($rule['edit']) ? 1 : 0;
+                        $config['edit'] = (empty($config['_comyli_edit_locked']) && !empty($rule['edit'])) ? 1 : 0;
                     }
 
                     // Visible columns (limit_cols)
@@ -310,15 +314,17 @@ class ConfigResolver {
             if (!empty($maint['ensure_quarterly_dates']) && is_array($maint['ensure_quarterly_dates'])) {
                 $qDef = $maint['ensure_quarterly_dates'];
                 $maintTbl = preg_replace('/[^a-zA-Z0-9_]/', '', (string)($qDef['table'] ?? 'tbl_naechstekontrolldaten'));
-                $years = max(1, min(10, (int)($qDef['years_ahead'] ?? 3)));
-                $months = (array)($qDef['months'] ?? [1, 2, 3, 4]);
-                $day = max(1, min(28, (int)($qDef['day'] ?? 1)));
-                $currYear = (int)gmdate('Y');
+                if ($maintTbl !== '') {
+                    $years = max(1, min(10, (int)($qDef['years_ahead'] ?? 3)));
+                    $months = (array)($qDef['months'] ?? [1, 2, 3, 4]);
+                    $day = max(1, min(28, (int)($qDef['day'] ?? 1)));
+                    $currYear = (int)(function_exists('wp_date') ? wp_date('Y') : gmdate('Y'));
 
-                for ($y = 0; $y < $years; $y++) {
-                    foreach ($months as $m) {
-                        $dateStr = sprintf('%04d-%02d-%02d', $currYear + $y, (int)$m, $day);
-                        @$mysqli->query("INSERT IGNORE INTO `{$maintTbl}` VALUES('{$dateStr}')");
+                    for ($y = 0; $y < $years; $y++) {
+                        foreach ($months as $m) {
+                            $dateStr = sprintf('%04d-%02d-%02d', $currYear + $y, (int)$m, $day);
+                            @$mysqli->query("INSERT IGNORE INTO `{$maintTbl}` VALUES('{$dateStr}')");
+                        }
                     }
                 }
             }
@@ -379,7 +385,7 @@ class ConfigResolver {
 
             $config['valueH']['lastChangedUser'] = $userLogin;
             $config['readonly']['created'] = true;
-            $config['postOverride']['created'] = gmdate("Y-m-d H:i:s");
+            $config['postOverride']['created'] = function_exists('current_time') ? current_time('mysql') : gmdate('Y-m-d H:i:s');
             $config['readonly']['createdUser'] = true;
             $config['valueP']['createdUser'] = $userLogin;
         }
@@ -402,10 +408,14 @@ class ConfigResolver {
 
         $str = $value;
 
-        // Current date / time tokens
-        $str = str_replace('{current_date}', gmdate('Y-m-d'), $str);
-        $str = str_replace('{current_datetime}', gmdate('Y-m-d H:i:s'), $str);
-        $str = str_replace('{current_year}', gmdate('Y'), $str);
+        // Current date / time tokens (WordPress local timezone)
+        $localDate = function_exists('wp_date') ? wp_date('Y-m-d') : gmdate('Y-m-d');
+        $localDateTime = function_exists('current_time') ? current_time('mysql') : gmdate('Y-m-d H:i:s');
+        $localYear = function_exists('wp_date') ? wp_date('Y') : gmdate('Y');
+
+        $str = str_replace('{current_date}', $localDate, $str);
+        $str = str_replace('{current_datetime}', $localDateTime, $str);
+        $str = str_replace('{current_year}', $localYear, $str);
 
         // User tokens
         if (str_contains($str, '{current_user_login}')) {
@@ -430,10 +440,10 @@ class ConfigResolver {
         }
 
         // Year letter token: {year_letter:2024} -> calculates A-Z cyclically from base year
-        $str = preg_replace_callback('/\{year_letter:(\d{4})\}/', function ($m) {
+        $str = preg_replace_callback('/\{year_letter:(\d{4})\}/', function ($m) use ($localYear) {
             $baseYear = (int)$m[1];
-            $currentYear = (int)gmdate('Y');
-            return chr(ord('A') + ($currentYear + 26 - $baseYear) % 26);
+            $currentYear = (int)$localYear;
+            return chr(ord('A') + ((($currentYear - $baseYear) % 26) + 26) % 26);
         }, $str);
 
         // Reference other evaluated columns: {column:Px}

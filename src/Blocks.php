@@ -64,6 +64,7 @@ class Blocks {
                 'valueColumn' => ['type' => 'string', 'default' => ''],
                 'title'       => ['type' => 'string', 'default' => ''],
                 'height'      => ['type' => 'number', 'default' => 350],
+                'params'      => ['type' => 'string', 'default' => ''],
             ],
         ]);
 
@@ -82,6 +83,7 @@ class Blocks {
                 'trendDirection' => ['type' => 'string', 'default' => 'up'],
                 'icon'           => ['type' => 'string', 'default' => '📊'],
                 'color'          => ['type' => 'string', 'default' => '#3b82f6'],
+                'params'         => ['type' => 'string', 'default' => ''],
             ],
         ]);
 
@@ -106,20 +108,19 @@ class Blocks {
      */
     public function enqueueBlockEditorAssets(): void {
         $url = $this->config->plugin['url'];
-        $path = $this->config->plugin['path'];
 
         wp_register_script(
             'ha-comyli-blocks-js',
             $url . 'js/blocks.js',
             ['wp-blocks', 'wp-element', 'wp-components', 'wp-block-editor'],
-            '3.1.0'
+            '3.5.0'
         );
 
         wp_register_style(
             'ha-comyli-blocks-css',
             $url . 'css/blocks.css',
             [],
-            '3.1.0'
+            '3.5.0'
         );
 
         // Discover CPT-defined queries (from QueryManager)
@@ -146,7 +147,7 @@ class Blocks {
         ksort($queryList);
         $queries = array_values($queryList);
 
-        // 3. Discover database tables (WordPress DB + external tables from CoMyLi post types)
+        // Discover database tables (WordPress DB + external tables from CoMyLi post types)
         global $wpdb;
         $tables = [];
         if ($wpdb) {
@@ -156,7 +157,6 @@ class Blocks {
             }
         }
 
-        // Also add tables configured in CoMyLi posts (including external DB tables)
         if (class_exists(ConnectionManager::class)) {
             $tableOptions = ConnectionManager::get_all_tables_options();
             foreach ($tableOptions as $to) {
@@ -189,8 +189,8 @@ class Blocks {
      * @return string
      */
     public function renderQueryTable(array $attributes): string {
-        $query = !empty($attributes['query']) ? trim($attributes['query']) : '';
-        $table = !empty($attributes['table']) ? trim($attributes['table']) : '';
+        $query = !empty($attributes['query']) ? trim((string)$attributes['query']) : '';
+        $table = !empty($attributes['table']) ? trim((string)$attributes['table']) : '';
 
         if (empty($query) && empty($table)) {
             return '<div class="comyli-block-placeholder"><p>Bitte in den Block-Einstellungen eine Abfrage oder Tabelle auswählen.</p></div>';
@@ -221,8 +221,10 @@ class Blocks {
      * @return string
      */
     public function renderChart(array $attributes): string {
-        $query = !empty($attributes['query']) ? trim($attributes['query']) : '';
-        $table = !empty($attributes['table']) ? trim($attributes['table']) : '';
+        Assets::ensureFrontendEnqueued($this->config);
+
+        $query = !empty($attributes['query']) ? trim((string)$attributes['query']) : '';
+        $table = !empty($attributes['table']) ? trim((string)$attributes['table']) : '';
 
         if (empty($query) && empty($table)) {
             return '<div class="comyli-block-placeholder"><p>Bitte eine Abfrage oder Tabelle für das Diagramm konfigurieren.</p></div>';
@@ -232,27 +234,46 @@ class Blocks {
             return '<div class="comyli-error">Keine Berechtigung zum Anzeigen dieses Diagramms.</div>';
         }
 
+        if (empty($query) && !empty($table)) {
+            if (class_exists(Permissions::class) && !Permissions::can_view_table($table)) {
+                return '<div class="comyli-error">Keine Berechtigung zum Anzeigen dieser Tabelle.</div>';
+            }
+            $tableCfg = ConnectionManager::resolve_table_config($table, true);
+            if (!$tableCfg && !current_user_can('manage_options')) {
+                return '<div class="comyli-error">Die gewählte Tabelle ist nicht über CoMyLi freigegeben.</div>';
+            }
+        }
+
         require_once $this->config->plugin['path'] . '/sql-admin/index.php';
+
+        try {
+            $conn = !empty($query)
+                ? ConnectionManager::get_connection_for_query($query)
+                : ConnectionManager::get_connection_for_table($table);
+        } catch (\Exception $e) {
+            return '<div class="comyli-error">Datenbankfehler: ' . esc_html($e->getMessage()) . '</div>';
+        }
 
         $sql = '';
         if (!empty($query)) {
-            $configHandler = new \Comyli\Standalone\ConfigHandler($this->config->plugin);
+            $cfgArr = $this->config->plugin;
+            $cfgArr['mysqli'] = $conn;
+            $cfgArr['params'] = $attributes['params'] ?? '';
+            $qPost = QueryManager::find_query_post($query);
+            if ($qPost) {
+                $cfgArr['comyli_id'] = (int)get_post_meta($qPost->ID, QueryManager::META_TABLE_ID, true);
+            }
+            $configHandler = new \Comyli\Standalone\ConfigHandler($cfgArr);
             $sql = \Comyli\Standalone\FieldHandler::resolveSQL($query, $configHandler);
         } elseif (!empty($table)) {
-            $safeTable = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
-            $sql = "SELECT * FROM `{$safeTable}` LIMIT 50";
+            $safeTable = (string)preg_replace('/[^a-zA-Z0-9_]/', '', $table);
+            if ($safeTable !== '') {
+                $sql = "SELECT * FROM `{$safeTable}` LIMIT 50";
+            }
         }
 
         if (empty($sql)) {
             return '<div class="comyli-error">Abfrage konnte nicht geladen werden.</div>';
-        }
-
-        try {
-            $conn = !empty($query) 
-                ? ConnectionManager::get_connection_for_query($query) 
-                : ConnectionManager::get_connection_for_table($table);
-        } catch (\Exception $e) {
-            return '<div class="comyli-error">Datenbankfehler: ' . esc_html($e->getMessage()) . '</div>';
         }
 
         $res = @$conn->query($sql);
@@ -269,14 +290,14 @@ class Blocks {
             return '<div class="comyli-notice">Keine Daten für Diagramm gefunden.</div>';
         }
 
-        $labelCol = !empty($attributes['labelColumn']) ? $attributes['labelColumn'] : null;
-        $valCol = !empty($attributes['valueColumn']) ? $attributes['valueColumn'] : null;
+        $labelCol = !empty($attributes['labelColumn']) ? (string)$attributes['labelColumn'] : null;
+        $valCol = !empty($attributes['valueColumn']) ? (string)$attributes['valueColumn'] : null;
 
         $cols = array_keys($rows[0]);
-        if (!$labelCol || !in_array($labelCol, $cols)) {
+        if (!$labelCol || !in_array($labelCol, $cols, true)) {
             $labelCol = $cols[0] ?? '';
         }
-        if (!$valCol || !in_array($valCol, $cols)) {
+        if (!$valCol || !in_array($valCol, $cols, true)) {
             $valCol = $cols[1] ?? ($cols[0] ?? '');
         }
 
@@ -288,17 +309,17 @@ class Blocks {
         }
 
         $chartId = 'comyli_chart_' . wp_unique_id();
-        $chartType = in_array($attributes['chartType'], ['bar', 'line', 'pie', 'doughnut']) ? $attributes['chartType'] : 'bar';
-        $title = !empty($attributes['title']) ? esc_html($attributes['title']) : '';
+        $chartType = in_array($attributes['chartType'] ?? '', ['bar', 'line', 'pie', 'doughnut'], true) ? $attributes['chartType'] : 'bar';
+        $title = !empty($attributes['title']) ? esc_html((string)$attributes['title']) : '';
         $height = max(200, min(800, (int)($attributes['height'] ?? 350)));
 
         $colors = "['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16']";
 
-        $jsonLabels = json_encode($labels);
-        $jsonData = json_encode($data);
+        $jsonLabels = wp_json_encode($labels, JSON_HEX_TAG | JSON_HEX_AMP);
+        $jsonData = wp_json_encode($data, JSON_HEX_TAG | JSON_HEX_AMP);
 
-        // Enqueue Chart.js
-        wp_enqueue_script('chartjs', 'https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js', [], '4.4.2', true);
+        // Enqueue local Chart.js bundle (GDPR-safe, no external CDN)
+        wp_enqueue_script('comyli-chartjs', $this->config->plugin['url'] . 'js/chart.umd.min.js', [], '4.4.2', true);
 
         ob_start();
         ?>
@@ -334,7 +355,7 @@ class Blocks {
                             maintainAspectRatio: false,
                             plugins: {
                                 legend: {
-                                    display: '<?php echo in_array($chartType, ['pie', 'doughnut']) ? 'true' : 'false'; ?>' === 'true'
+                                    display: '<?php echo in_array($chartType, ['pie', 'doughnut'], true) ? 'true' : 'false'; ?>' === 'true'
                                 }
                             }
                         }
@@ -349,7 +370,7 @@ class Blocks {
             </script>
         </div>
         <?php
-        return ob_get_clean();
+        return ob_get_clean() ?: '';
     }
 
     /**
@@ -359,49 +380,70 @@ class Blocks {
      * @return string
      */
     public function renderKpiCard(array $attributes): string {
-        $query = !empty($attributes['query']) ? trim($attributes['query']) : '';
-        $table = !empty($attributes['table']) ? trim($attributes['table']) : '';
+        Assets::ensureFrontendEnqueued($this->config);
+
+        $query = !empty($attributes['query']) ? trim((string)$attributes['query']) : '';
+        $table = !empty($attributes['table']) ? trim((string)$attributes['table']) : '';
 
         if (!empty($query) && class_exists(Permissions::class) && !Permissions::can_view_query($query)) {
             return '';
         }
 
+        if (empty($query) && !empty($table)) {
+            if (class_exists(Permissions::class) && !Permissions::can_view_table($table)) {
+                return '';
+            }
+            if (!ConnectionManager::resolve_table_config($table, true) && !current_user_can('manage_options')) {
+                return '';
+            }
+        }
+
         $val = 0;
         $sql = '';
 
-        if (!empty($query)) {
+        if (!empty($query) || !empty($table)) {
             require_once $this->config->plugin['path'] . '/sql-admin/index.php';
-            $configHandler = new \Comyli\Standalone\ConfigHandler($this->config->plugin);
-            $sql = \Comyli\Standalone\FieldHandler::resolveSQL($query, $configHandler);
-        } elseif (!empty($table)) {
-            $safeTable = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
-            $sql = "SELECT COUNT(*) FROM `{$safeTable}`";
-        }
-
-        if (!empty($sql)) {
             try {
-                $conn = !empty($query) 
-                    ? ConnectionManager::get_connection_for_query($query) 
+                $conn = !empty($query)
+                    ? ConnectionManager::get_connection_for_query($query)
                     : ConnectionManager::get_connection_for_table($table);
-                
-                $res = @$conn->query($sql);
-                if ($res && ($res instanceof \mysqli_result)) {
-                    $row = $res->fetch_row();
-                    $val = $row[0] ?? 0;
+
+                if (!empty($query)) {
+                    $cfgArr = $this->config->plugin;
+                    $cfgArr['mysqli'] = $conn;
+                    $cfgArr['params'] = $attributes['params'] ?? '';
+                    $qPost = QueryManager::find_query_post($query);
+                    if ($qPost) {
+                        $cfgArr['comyli_id'] = (int)get_post_meta($qPost->ID, QueryManager::META_TABLE_ID, true);
+                    }
+                    $configHandler = new \Comyli\Standalone\ConfigHandler($cfgArr);
+                    $sql = \Comyli\Standalone\FieldHandler::resolveSQL($query, $configHandler);
+                } else {
+                    $safeTable = (string)preg_replace('/[^a-zA-Z0-9_]/', '', $table);
+                    if ($safeTable !== '') {
+                        $sql = "SELECT COUNT(*) FROM `{$safeTable}`";
+                    }
+                }
+
+                if (!empty($sql)) {
+                    $res = @$conn->query($sql);
+                    if ($res && ($res instanceof \mysqli_result)) {
+                        $row = $res->fetch_row();
+                        $val = $row[0] ?? 0;
+                    }
                 }
             } catch (\Exception $e) {
-                // Connection or query error
                 $val = 0;
             }
         }
 
         $formattedVal = is_numeric($val) ? number_format_i18n((float)$val) : esc_html((string)$val);
-        $title = !empty($attributes['title']) ? esc_html($attributes['title']) : 'Kennzahl';
-        $unit = !empty($attributes['unit']) ? esc_html($attributes['unit']) : '';
-        $trend = !empty($attributes['trend']) ? esc_html($attributes['trend']) : '';
-        $trendDir = in_array($attributes['trendDirection'] ?? '', ['up', 'down', 'neutral']) ? $attributes['trendDirection'] : 'up';
-        $icon = !empty($attributes['icon']) ? esc_html($attributes['icon']) : '📊';
-        $color = !empty($attributes['color']) ? esc_attr($attributes['color']) : '#3b82f6';
+        $title = !empty($attributes['title']) ? esc_html((string)$attributes['title']) : 'Kennzahl';
+        $unit = !empty($attributes['unit']) ? esc_html((string)$attributes['unit']) : '';
+        $trend = !empty($attributes['trend']) ? esc_html((string)$attributes['trend']) : '';
+        $trendDir = in_array($attributes['trendDirection'] ?? '', ['up', 'down', 'neutral'], true) ? $attributes['trendDirection'] : 'up';
+        $icon = !empty($attributes['icon']) ? esc_html((string)$attributes['icon']) : '📊';
+        $color = !empty($attributes['color']) ? esc_attr((string)$attributes['color']) : '#3b82f6';
 
         ob_start();
         ?>
@@ -425,7 +467,7 @@ class Blocks {
             <?php endif; ?>
         </div>
         <?php
-        return ob_get_clean();
+        return ob_get_clean() ?: '';
     }
 
     /**
@@ -447,11 +489,17 @@ class Blocks {
      * @return string
      */
     public static function renderQueryListDirect(array $attributes, ?Config $config = null): string {
+        static $listCounter = 0;
+        $listCounter++;
+        $listId = 'comyli_list_' . $listCounter;
+
+        Assets::ensureFrontendEnqueued($config);
+
         if (!class_exists(QueryManager::class)) {
             return '<div class="comyli-error">QueryManager nicht verfügbar.</div>';
         }
 
-        $category = !empty($attributes['category']) ? trim($attributes['category']) : null;
+        $category = !empty($attributes['category']) ? trim((string)$attributes['category']) : null;
         $queries = QueryManager::get_available_queries(null, $category);
 
         $title = $attributes['title'] ?? 'Verfügbare Auswertungen & Berichte';
@@ -463,15 +511,17 @@ class Blocks {
             return '<div class="comyli-notice"><p>Keine freigegebenen Abfragen oder Berichte für Ihr Benutzerkonto verfügbar.</p></div>';
         }
 
-        $activeQuery = isset($_GET['comyli_run_qry']) ? sanitize_text_field($_GET['comyli_run_qry']) : '';
+        $activeQuery = isset($_GET['comyli_run_qry']) ? sanitize_text_field((string)wp_unslash($_GET['comyli_run_qry'])) : '';
+        $activeList = isset($_GET['comyli_list']) ? sanitize_text_field((string)wp_unslash($_GET['comyli_list'])) : '';
+        $isActiveHere = ($activeQuery !== '' && ($activeList === '' || $activeList === $listId));
 
         ob_start();
         ?>
-        <div class="comyli-query-list-wrap layout-<?php echo esc_attr($layout); ?>">
+        <div class="comyli-query-list-wrap layout-<?php echo esc_attr($layout); ?>" id="<?php echo esc_attr($listId); ?>">
             <?php if (!empty($title)): ?>
                 <div class="comyli-query-list-header">
                     <h3 class="comyli-query-list-title">
-                        <?php echo esc_html($title); ?>
+                        <?php echo esc_html((string)$title); ?>
                         <?php if ($showCount): ?>
                             <span class="comyli-count-badge"><?php echo count($queries); ?></span>
                         <?php endif; ?>
@@ -481,7 +531,7 @@ class Blocks {
 
             <div class="comyli-query-items comyli-query-<?php echo esc_attr($layout); ?>">
                 <?php foreach ($queries as $q): ?>
-                    <div class="comyli-query-card <?php echo ($activeQuery === $q['slug']) ? 'is-active' : ''; ?>">
+                    <div class="comyli-query-card <?php echo ($isActiveHere && $activeQuery === $q['slug']) ? 'is-active' : ''; ?>">
                         <div class="comyli-query-card-header">
                             <h4 class="comyli-query-card-title"><?php echo esc_html($q['title']); ?></h4>
                             <?php if (!empty($q['category'])): ?>
@@ -493,7 +543,10 @@ class Blocks {
                         <?php endif; ?>
                         <div class="comyli-query-card-actions">
                             <?php
-                            $runUrl = add_query_arg('comyli_run_qry', $q['slug']);
+                            $runUrl = add_query_arg([
+                                'comyli_run_qry' => $q['slug'],
+                                'comyli_list'    => $listId,
+                            ]);
                             ?>
                             <a href="<?php echo esc_url($runUrl); ?>" class="comyli-btn-run">
                                 📊 Daten anzeigen
@@ -506,11 +559,11 @@ class Blocks {
                 <?php endforeach; ?>
             </div>
 
-            <?php if (!empty($activeQuery)): ?>
+            <?php if ($isActiveHere): ?>
                 <div class="comyli-active-query-output">
                     <div class="comyli-active-query-head">
                         <h4>Aktive Auswertung: <code><?php echo esc_html($activeQuery); ?></code></h4>
-                        <a href="<?php echo esc_url(remove_query_arg('comyli_run_qry')); ?>" class="comyli-btn-close">✕ Ausblendung</a>
+                        <a href="<?php echo esc_url(remove_query_arg(['comyli_run_qry', 'comyli_list'])); ?>" class="comyli-btn-close">✕ Ausblenden</a>
                     </div>
                     <?php echo Shortcode::renderDirect(['query' => $activeQuery, 'layout' => 'clean', 'filter' => true, 'csvExport' => true], $config); ?>
                 </div>

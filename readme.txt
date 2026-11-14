@@ -3,7 +3,7 @@ Contributors: alexhaio, ha
 Tags: mysql, admin, table, reporting, crud, rest-api, gutenberg, chart, cron, export
 Requires at least: 6.0
 Tested up to: 6.7
-Stable tag: 3.4.1
+Stable tag: 3.5.0
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -22,8 +22,8 @@ CoMyLi (Configurable MySQL Light Interface) transforms MySQL databases and SQL q
 * **Dynamic System Capabilities:** Full integration with WordPress roles and capabilities via Select2 search, eliminating hardcoded permission strings.
 * **Clean & Embedded Mode:** Seamless integration into modal windows, tabs, and dashboard cards (`layout="clean"` or `comyli_render()`).
 * **Dynamic Context Parameters:** Parameterized SQL queries (`:parameter_name`) with automatic token resolution (`{current_user_id}`, `{current_user_name}`, `{get:param}`).
-* **Headless REST API:** Modern JSON endpoints for SPA/Vue/React applications (`/wp-json/comyli/v1/query/{name}` and `/wp-json/comyli/v1/table/{name}`).
-* **Clean CSV Export:** Header-safe, buffer-cleared CSV streaming with UTF-8 BOM for Microsoft Excel.
+* **Headless REST API:** Modern JSON endpoints for SPA/Vue/React applications (`/wp-json/comyli/v1/query/{name}` and strictly configured `/wp-json/comyli/v1/table/{name}`).
+* **Unified CSV Export:** Header-safe, buffer-cleared CSV streaming with UTF-8 BOM, semicolon delimiter, and column visibility enforcement across frontend, shortcodes, blocks, and scheduled archives.
 * **Custom CSS & JavaScript Editors:** Dedicated syntax-highlighted CSS and JS editors per table (`comyli`) and per query (`comyli_query`) with WordPress revision tracking and automatic frontend injection.
 * **Custom Column Renderers:** Powerful hook system (`apply_filters('comyli_render_cell')` and `apply_filters('comyli_render_column_{name}')`).
 * **LiveSync (Auto / An / Aus):** Real-time optimistic concurrency synchronization with multi-user collision protection.
@@ -35,9 +35,9 @@ CoMyLi (Configurable MySQL Light Interface) transforms MySQL databases and SQL q
 1. **CoMyLi Tabelle (`ha-comyli/query-table`):**
    * Attributes: `query` (string), `table` (string), `params` (string, e.g. `id=123&status=aktiv`), `layout` (`clean` | `default`), `limit` (number, 5–200), `filter` (boolean), `csvExport` (boolean), `edit` (boolean).
 2. **CoMyLi Diagramm (`ha-comyli/chart`):**
-   * Attributes: `query` (string), `table` (string), `chartType` (`bar` | `line` | `pie` | `doughnut`), `labelColumn` (string), `valueColumn` (string), `title` (string), `height` (number, 200–800).
+   * Attributes: `query` (string), `table` (string), `params` (string), `chartType` (`bar` | `line` | `pie` | `doughnut`), `labelColumn` (string), `valueColumn` (string), `title` (string), `height` (number, 200–800).
 3. **CoMyLi KPI-Kachel (`ha-comyli/kpi-card`):**
-   * Attributes: `query` (string), `table` (string), `title` (string), `unit` (string), `trend` (string), `trendDirection` (`up` | `down` | `neutral`), `icon` (string), `color` (hex string).
+   * Attributes: `query` (string), `table` (string), `params` (string), `title` (string), `unit` (string), `trend` (string), `trendDirection` (`up` | `down` | `neutral`), `icon` (string), `color` (hex string).
 4. **CoMyLi Abfrage-Liste (`ha-comyli/query-list`):**
    * Attributes: `title` (string), `category` (string), `layout` (`grid` | `list`), `showCount` (boolean), `showDesc` (boolean).
 
@@ -77,7 +77,7 @@ Note: Placeholders are automatically escaped and quoted as SQL literals where ap
 = Headless REST API & Developer Hooks =
 
 * `GET /wp-json/comyli/v1/query/{name}?page=1&limit=25` – Executes a query and returns columns, pagination metadata, and rows.
-* `GET|POST|PUT|DELETE /wp-json/comyli/v1/table/{name}` – Full CRUD operations on local or external database tables.
+* `GET|POST|PUT|DELETE /wp-json/comyli/v1/table/{name}` – CRUD operations strictly scoped to tables configured as `comyli` Custom Post Types (enforcing `access_rules`, `visible_columns`, `readonly`, `forced`, and `post_override`).
 * Filters: `comyli_config`, `comyli_config_{$table}`, `comyli_render_cell`, `comyli_render_column_{$colName}`, `comyli_cap_query_{$queryName}`, `comyli_cap_table_view_{$table}`, `comyli_cap_table_edit_{$table}`.
 
 == Installation ==
@@ -88,6 +88,15 @@ Note: Placeholders are automatically escaped and quoted as SQL literals where ap
 4. Add tables or queries via Gutenberg blocks, shortcode `[comyli_table query="MyQuery" layout="clean"]`, or in PHP via `echo comyli_render(['query' => 'MyQuery']);`.
 
 == Changelog ==
+
+= 3.5.0 =
+* Security: Replaced unsigned client-side `comyli_atts` REST/CSV round-tripping with HMAC-SHA256 signed `comyli_ctx` context tokens, removed `window.COMYLI_ENV.atts` exposure and plaintext `dbpass` DOM value rendering, and enforced WordPress nonce CSRF protection on row actions.
+* Security: Strictly restricted `/wp-json/comyli/v1/table/{name}` and frontend URL table selection (`getRequestedTable`) to configured `comyli` tables; enforced `edit`, `visible_columns`, `readonly`, `forced` (`valueH`), `post_override`, and `primaryEdit` server-side on inserts and updates (both UI and REST CRUD).
+* Security & Privacy: Replaced external CDN Chart.js reference with local `js/chart.umd.min.js` bundle (v4.4.2), stripped style/script wrappers safely, escaped JS toast notifications, and guarded draft posts/tables via capability checks.
+* Improved: Unified CSV exports across frontend tables, blocks, shortcodes, queries, and `QueryScheduler` to consistent UTF-8 BOM + `;` delimiter format, respecting `visible_columns` (`limit_cols`), writing column headers even for 0-row results, and honoring local WordPress timezone (`wp_date`).
+* Improved: Multi-table page support via unique form/instance scoping, `data-comyli-env`, delegated event handling (sorting, bulk delete, pagination, inline edit, AJAX insert `[Hinzuf]`, Select2 initialization), and fast-path early Heartbeat handling.
+* Fixed: Dynamic `{column:...}` and `{sql:...}` `post_override` tokens now evaluate at POST submit time with submitted values even on `readonly` columns; preserved leading zeros in SQL parameter escaping; added cycle detection to `[QRY]` subquery resolution; normalized WordPress lowercase shortcode attributes (`csvExport`, `listQueries`, `listTables`, etc.); added `params` support to `chart` and `kpi-card` blocks.
+* Cleanup: Removed obsolete legacy classes (`Ajax`, `AdminMenu`, `AbstractDatatype`, `*Type`), unused stylesheets, `vendor/`, and redundant inline `<script>` blocks; added plugin activation/deactivation hooks and admin JSON validation error notices.
 
 = 3.4.1 =
 * Fixed: Sidebar with available queries (`listQueries`) now properly displays in the frontend when "Verfügbare Abfragen auflisten" is enabled, resolving a conflict where default clean embedded layout suppressed the sidebar.

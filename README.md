@@ -73,12 +73,13 @@ Bettet eine gespeicherte SQL-Abfrage oder eine Datenbanktabelle als interaktive 
 
 ### 3.2 `ha-comyli/chart` (Diagramm)
 
-Visualisiert das Ergebnis einer SQL-Abfrage oder Tabelle als interaktives **Chart.js**-Diagramm.
+Visualisiert das Ergebnis einer SQL-Abfrage oder Tabelle als interaktives **Chart.js**-Diagramm (über das lokal mitgelieferte Chart.js-Bundle ohne externe CDNs).
 
 | Attribut | Typ | Standard | Beschreibung |
 | :--- | :--- | :--- | :--- |
 | `query` | `string` | `""` | Slug/Name der SQL-Abfrage. |
 | `table` | `string` | `""` | Alternativ: Name der Datenbanktabelle (lädt bis zu 50 Zeilen). |
+| `params` | `string` | `""` | Dynamische Parameter für `:platzhalter` (Query-String oder JSON). |
 | `chartType` | `string` | `"bar"` | Diagrammtyp: `"bar"` (Balken), `"line"` (Linie), `"pie"` (Torte), `"doughnut"` (Donut). |
 | `labelColumn`| `string` | `""` | Spaltenname für die Beschriftungen (X-Achse / Segmente). Fallback: 1. Spalte. |
 | `valueColumn`| `string` | `""` | Spaltenname für die Zahlenwerte (Y-Achse). Fallback: 2. Spalte. |
@@ -93,6 +94,7 @@ Zeigt eine einzelne Kennzahl (1. Zeile, 1. Spalte einer SQL-Abfrage oder `COUNT(
 | :--- | :--- | :--- | :--- |
 | `query` | `string` | `""` | Slug/Name der SQL-Abfrage (z. B. `SELECT COUNT(*) FROM ...`). |
 | `table` | `string` | `""` | Alternativ: Tabellenname (berechnet automatisch `SELECT COUNT(*) FROM table`). |
+| `params` | `string` | `""` | Dynamische Parameter für `:platzhalter` (Query-String oder JSON). |
 | `title` | `string` | `"Gesamtanzahl"`| Titel der KPI-Kachel. |
 | `unit` | `string` | `""` | Einheit hinter dem Wert (z. B. `€`, `%`, `Plätze`). |
 | `trend` | `string` | `""` | Optionaler Trend-Text in der Fußzeile (z. B. `+12% ggü. Vormonat`). |
@@ -125,7 +127,7 @@ Alle drei Shortcode-Namen sind gleichwertige Aliase zum Einbetten von Tabellen o
 | Attribut | Standard | Beschreibung |
 | :--- | :--- | :--- |
 | `id` | `0` | Post-ID eines konfigurierten `comyli`-Tabellen-Posts. |
-| `query` / `qry` | `""` | Slug, Titel, ID einer `comyli_query`-Abfrage oder Dateiname einer `.sql`-Datei. |
+| `query` / `qry` | `""` | Slug, Titel oder ID einer `comyli_query`-Abfrage. |
 | `table` / `tables` | `""` | Tabellenname in der Datenbank oder Slug eines `comyli`-Tabellen-Posts. |
 | `params` | `""` | Parameter für `:platzhalter` (z. B. `params="abteilung=IT&aktiv=1"` oder JSON). |
 | `layout` | `"clean"` | `"clean"` (eingebettetes Layout ohne Sidebar) oder `"default"`. |
@@ -511,7 +513,7 @@ Verbindet Spalten mit Nachschlagequellen für Auswahllisten:
   * `"wp_option"`: Liest ein in den WordPress-Optionen hinterlegtes JSON-Array aus (`"option": "meine_option"`, `"property": "feldname"`).
   * `"wp_users"`: Lädt WordPress-Benutzer (`"field": "user_login"` oder `"display_name"`, `"include_empty": true` für leere Anfangsoption).
 * **`"mode"`**:
-  * `"input"`: Klassisches `<select>`-Auswahldropdown.
+  * `"input"`: Textfeld mit strikt validierter `<datalist>`-Auswahlliste (`data-strict="true"` – nur Werte aus der Liste zulässig; JSON-Spalten werden automatisch als Multi-Select2 dargestellt).
   * `"suggestion"`: Textfeld mit `<datalist>`-Autovervollständigung (freie Eingabe weiterhin möglich).
 * **`"list_key"`** (`string`, optional): Gemeinsamer Cache-Schlüssel, wenn mehrere Spalten denselben Datensatz teilen (z. B. `BewertungStamm` und `BewertungKrone`).
 

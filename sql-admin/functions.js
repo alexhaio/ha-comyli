@@ -1,70 +1,423 @@
 var COMYLI = COMYLI || {};
 COMYLI.isReady = true;
 
-COMYLI.filter = {
-	cleanFilter: function(){
-		var elements = document.querySelectorAll('.filter:not([type="submit"])');
-		for(var i=0; i < elements.length; i++){
-			elements[i].value = '';
-		}
-		
-		var searchInput = document.querySelector('.volltextsuche input');
-		if(searchInput){ searchInput.value = ''; }
-	},
-	
-	init: function(){
-		var elements = document.getElementsByClassName('page');
-		for(var i=0; i < elements.length; i++){
-			elements[i].addEventListener("change", function(){this.form.submit();});
-		}
-		
-		var elements = document.getElementsByClassName('cleanFilter');
-		for(var i=0; i < elements.length; i++){
-			elements[i].addEventListener("click", function(e){e.preventDefault(); COMYLI.filter.cleanFilter(); this.closest('form').submit();});
-		}
-	},
-	switchBool: function(e){
-		var a = $(e);
-		var input = a.prev("input");
-		var inputName = base64url_decode(input.attr("name"));
-			
-		if(a.text() == "or"){
-			a.text("and");
-			inputName = inputName.substr(0,5) + "A" + inputName.substr(6);
-		}
-		else{
-			a.text("or");
-			inputName = inputName.substr(0,5) + "O" + inputName.substr(6);
-		}
-		input.attr("name",base64url_encode(inputName));
-	},
-	
-	removeFilterField: function(){
-		
-	},
-	
-	showOperatorsMask: function(){
-		
+(function (window, document, $) {
+	'use strict';
+
+	function escapeHtml(str) {
+		if (str === null || str === undefined) return '';
+		return String(str)
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;')
+			.replace(/'/g, '&#039;');
 	}
-}
 
+	function base64url_encode(data) {
+		return window.btoa(data)
+			.replace(/\+/g, '-')
+			.replace(/\//g, '_')
+			.replace(/=+$/gm, '');
+	}
 
+	function base64url_decode(data) {
+		var padLen = (4 - (data.length % 4)) % 4;
+		return window.atob(
+			data.replace(/_/g, '/')
+				.replace(/-/g, '+')
+				.padEnd(data.length + padLen, '=')
+		);
+	}
 
+	function _get(reqKey) {
+		var uri = window.location.href.split('?');
+		if (uri.length <= 1) return undefined;
+		var vars = uri[1].split('&');
+		var query_string = {};
+		for (var i = 0; i < vars.length; i++) {
+			if (!vars[i]) continue;
+			var pair = vars[i].split('=');
+			var key = decodeURIComponent(pair[0] || '');
+			var rawVal = pair.length > 1 ? pair.slice(1).join('=') : '';
+			var value = decodeURIComponent(rawVal);
+			if (typeof query_string[key] === 'undefined') {
+				query_string[key] = value;
+			} else if (typeof query_string[key] === 'string') {
+				query_string[key] = [query_string[key], value];
+			} else {
+				query_string[key].push(value);
+			}
+		}
+		return query_string[base64url_encode(reqKey)];
+	}
 
-jQuery( document ).ready(function( $ ) {
-	if (window.comyliJsInitialized) return;
-	window.comyliJsInitialized = true;
-	
-	// Initialize CodeJar for MySQL syntax highlighting
-	if (typeof CodeJar !== 'undefined' && typeof Prism !== 'undefined') {
-		document.querySelectorAll('textarea.sql-editor').forEach(textarea => {
+	function getScriptAddr() {
+		return '//' + window.location.hostname + window.location.pathname;
+	}
+
+	function getComyliEnv(el) {
+		if (el && typeof el.closest === 'function') {
+			var layout = el.closest('.comyli-layout');
+			if (layout) {
+				if (layout._comyliEnvParsed) {
+					return layout._comyliEnvParsed;
+				}
+				if (layout.dataset && layout.dataset.comyliEnv) {
+					try {
+						layout._comyliEnvParsed = JSON.parse(layout.dataset.comyliEnv);
+						return layout._comyliEnvParsed;
+					} catch (e) {}
+				}
+			}
+		}
+		return typeof window.COMYLI_ENV !== 'undefined' ? window.COMYLI_ENV : null;
+	}
+
+	function findFormFieldByName(form, name) {
+		if (!form || !form.elements) return null;
+		for (var i = 0; i < form.elements.length; i++) {
+			if (form.elements[i].name === name) {
+				return form.elements[i];
+			}
+		}
+		return null;
+	}
+
+	function submitFilterForm(form) {
+		if (!form) return;
+		if ($ && typeof $ === 'function') {
+			$(form).trigger('submit');
+		} else {
+			form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+		}
+	}
+
+	function parseJsonTextResponse(text) {
+		if (typeof text === 'string' && text.startsWith('"') && text.endsWith('"')) {
+			try { return JSON.parse(text); } catch (e) {}
+		}
+		return text;
+	}
+
+	function toast(text, timeoutMs) {
+		timeoutMs = timeoutMs || 3000;
+		var container = document.getElementById('toast-container');
+		if (!container) {
+			container = document.createElement('div');
+			container.id = 'toast-container';
+			document.body.appendChild(container);
+		}
+
+		var t = document.createElement('div');
+		t.className = 'toast';
+		t.innerHTML = text;
+		container.appendChild(t);
+
+		var closeToast = function () {
+			t.classList.add('closing');
+			setTimeout(function () {
+				if (t.parentElement) t.remove();
+			}, 300);
+		};
+
+		var tTimeout = setTimeout(closeToast, timeoutMs);
+
+		t.addEventListener('mouseenter', function () {
+			clearTimeout(tTimeout);
+		});
+		t.addEventListener('mouseleave', function () {
+			tTimeout = setTimeout(closeToast, timeoutMs);
+		});
+
+		return {
+			close: closeToast,
+			element: t
+		};
+	}
+
+	function isValidForm(form) {
+		if (!form || !form.elements) return true;
+		for (var i = 0; i < form.elements.length; i++) {
+			var e = form.elements[i];
+			var isStrict = (e.dataset && e.dataset.strict === 'true') ||
+				(e.list && e.list.dataset && e.list.dataset.strict === 'true');
+
+			if (e.list != null && isStrict && e.list.id.substring(0, 8) !== 'optional') {
+				var proof = false;
+				for (var j = 0; j < e.list.options.length; j++) {
+					if (e.list.options[j].value === e.value || e.value === '') {
+						proof = true;
+						break;
+					}
+				}
+				if (!proof) {
+					toast('"' + escapeHtml(e.value) + '" ist kein Wert aus der vorgegebenen Liste.');
+					return false;
+				}
+			}
+
+			if ((e.tagName === 'INPUT' || e.tagName === 'TEXTAREA') && e.required && e.value === '') {
+				toast('Spalte "' + escapeHtml(e.name) + '" muss gef&uuml;llt sein.');
+				return false;
+			}
+			if (e.tagName === 'SELECT' && e.required) {
+				var selVal = (e.selectedIndex >= 0 && e.options[e.selectedIndex]) ? e.options[e.selectedIndex].value : '';
+				if (selVal === '') {
+					toast('Spalte "' + escapeHtml(e.name) + '" muss gef&uuml;llt sein.');
+					return false;
+				}
+			}
+
+			if (e.validity && !e.validity.valid) {
+				toast('Spalte "' + escapeHtml(e.name) + '" entspricht nicht dem vorgegebenen Format: ' + escapeHtml(e.pattern || ''));
+				return false;
+			}
+		}
+		return true;
+	}
+
+	function ajaxLoad(form) {
+		if (!form || !form.elements) return;
+		for (var i = 0; i < form.elements.length; i++) {
+			var e = form.elements[i];
+			if (e.name && e.name.substr(0, 4) === 'prim') {
+				var primNew = findFormFieldByName(form, e.name.substr(4));
+				if (!primNew) continue;
+				if (primNew.tagName === 'INPUT' || primNew.tagName === 'TEXTAREA') {
+					e.value = primNew.value;
+				} else if (primNew.tagName === 'SELECT' && primNew.selectedIndex >= 0 && primNew.options[primNew.selectedIndex]) {
+					e.value = primNew.options[primNew.selectedIndex].value;
+				}
+			}
+		}
+	}
+
+	function extractFileName(e) {
+		var fullPath = e.value;
+		if (!fullPath) return;
+		var startIndex = (fullPath.indexOf('\\') >= 0 ? fullPath.lastIndexOf('\\') : fullPath.lastIndexOf('/'));
+		var filename = fullPath.substring(startIndex);
+		if (filename.indexOf('\\') === 0 || filename.indexOf('/') === 0) {
+			filename = filename.substring(1);
+		}
+		var form = e.form || (typeof e.closest === 'function' ? e.closest('form') : null);
+		var nameField = form ? findFormFieldByName(form, e.name + '_name') : null;
+		if (nameField) nameField.value = filename;
+	}
+
+	function _doAjaxSend(form) {
+		form.isSaving = true;
+		form.needsSave = false;
+
+		var xhttp = new XMLHttpRequest();
+		xhttp.onreadystatechange = function () {
+			if (this.readyState === 4 && this.status === 200) {
+				var response = String(parseJsonTextResponse(this.responseText) || '');
+				var tsParts = response.split('|TS|');
+				toast(escapeHtml(tsParts[0]));
+				if (tsParts.length > 1 && tsParts[1]) {
+					var inputs = form.querySelectorAll('input[name="lastChanged"], input[name="lstChanged"]');
+					inputs.forEach(function (inp) {
+						inp.value = tsParts[1].trim();
+					});
+				}
+				ajaxLoad(form);
+				form.isSaving = false;
+				if (form.needsSave) {
+					_doAjaxSend(form);
+				}
+			} else if (this.readyState === 4) {
+				var errText = parseJsonTextResponse(this.responseText);
+				toast('Fehler: ' + escapeHtml(errText));
+				form.isSaving = false;
+			}
+		};
+
+		var env = getComyliEnv(form);
+		var tbl = _get('table');
+		var tblParam = (tbl !== undefined && tbl !== 'undefined') ? '&' + base64url_encode('table') + '=' + tbl : '';
+		var dbgParam = _get('debug');
+		var uriStr = '' + getScriptAddr() + '?' + base64url_encode('noInterface') + '=1&' + base64url_encode('debug') + '=' + (dbgParam || '') + tblParam;
+
+		if (isValidForm(form)) {
+			var formData = new FormData(form);
+			if (env && env.restUrl) {
+				var urlObj = new URL(env.restUrl + 'save', window.location.origin);
+				if (env.postId) urlObj.searchParams.set('comyli_id', env.postId);
+				if (env.ctx) urlObj.searchParams.set('comyli_ctx', env.ctx);
+				if (tbl !== undefined && tbl !== 'undefined') {
+					urlObj.searchParams.set(base64url_encode('table'), tbl);
+				}
+				uriStr = urlObj.toString();
+			}
+			formData.append('TA_btnSubmit', '[S]');
+			xhttp.open('POST', uriStr, true);
+			if (env && env.nonce) xhttp.setRequestHeader('X-WP-Nonce', env.nonce);
+			xhttp.send(formData);
+		} else {
+			form.isSaving = false;
+		}
+	}
+
+	function ajaxSend(e) {
+		if (e && e.isTrusted === false && (!e.detail || !e.detail.userAction)) {
+			return;
+		}
+		var form = (e && e.target) ? (e.target.form || (typeof e.target.closest === 'function' ? e.target.closest('form') : null)) : null;
+		if (!form && e && e.tagName === 'FORM') form = e;
+		if (!form) return;
+		if (form.isSaving) {
+			form.needsSave = true;
+			return;
+		}
+		_doAjaxSend(form);
+	}
+
+	function activateAjaxSend() {
+		if (typeof COMYLI !== 'undefined' && typeof COMYLI.triggerActiveSync === 'function') {
+			COMYLI.triggerActiveSync();
+		}
+	}
+
+	function addAjaxTo(elements) {
+		for (var i = 0; i < elements.length; i++) {
+			var form = elements[i];
+			for (var j = 0; j < form.elements.length; j++) {
+				var input = form.elements[j];
+				if (!input._hasComyliListener) {
+					input._hasComyliListener = true;
+					input.addEventListener('change', ajaxSend);
+					input.addEventListener('input', activateAjaxSend, true);
+				}
+			}
+		}
+	}
+
+	function updateBulkDelBtn(tableEl) {
+		if (!tableEl) return;
+		var rowChecks = tableEl.querySelectorAll('.comyli-bulk-check');
+		var bulkDelBtn = tableEl.querySelector('.comyli-bulk-delete-btn');
+		var anyChecked = Array.from(rowChecks).some(function (cb) { return cb.checked; });
+		if (bulkDelBtn) bulkDelBtn.style.display = anyChecked ? 'inline-block' : 'none';
+	}
+
+	function colsInit(container) {
+		var scope = container || document;
+		var colnames = scope.getElementsByClassName('colnames');
+		for (var i = 0; i < colnames.length; i++) {
+			var parentWidth = colnames[i].parentElement ? colnames[i].parentElement.getBoundingClientRect().width : 0;
+			if (parentWidth > 10) {
+				colnames[i].style.minWidth = (parentWidth - 10) + 'px';
+			}
+		}
+	}
+
+	function scrollHandler() {
+		var navbar = document.querySelector('.comyli-colnames-row');
+		if (!navbar) return;
+		var colnames = document.getElementsByClassName('colnames');
+		var rect = navbar.parentElement ? navbar.parentElement.getBoundingClientRect() : null;
+		var stickyTop = rect ? rect.top + window.pageYOffset : 0;
+
+		if (window.pageYOffset >= stickyTop && rect && rect.bottom > 80) {
+			navbar.classList.add('sticky');
+			for (var i = 0; i < colnames.length; i++) {
+				if (colnames[i].parentElement) {
+					colnames[i].style.left = colnames[i].parentElement.getBoundingClientRect().left + 'px';
+				}
+			}
+		} else {
+			navbar.classList.remove('sticky');
+			for (var j = 0; j < colnames.length; j++) {
+				colnames[j].style.left = '0px';
+			}
+		}
+	}
+
+	function addResizableHandle(column) {
+		if (!column || column.querySelector('.column-resize-handle')) return;
+		var handle = document.createElement('div');
+		handle.classList.add('column-resize-handle');
+		column.appendChild(handle);
+
+		var currentColumn = null;
+		var startX = 0;
+		var initialWidth = 0;
+
+		var onDrag = function (e) {
+			if (!currentColumn) return;
+			var diffX = e.clientX - startX;
+			var newWidth = initialWidth + diffX;
+			if (newWidth > 50) {
+				currentColumn.style.width = newWidth + 'px';
+				currentColumn.style.maxWidth = newWidth + 'px';
+			}
+		};
+
+		var stopResize = function () {
+			document.removeEventListener('mousemove', onDrag);
+			document.removeEventListener('mouseup', stopResize);
+			document.body.style.userSelect = '';
+			document.body.style.cursor = '';
+			currentColumn = null;
+		};
+
+		handle.addEventListener('mousedown', function (e) {
+			e.stopPropagation();
+			currentColumn = column;
+			startX = e.clientX;
+			initialWidth = currentColumn.offsetWidth;
+			document.body.style.userSelect = 'none';
+			document.body.style.cursor = 'col-resize';
+			document.addEventListener('mousemove', onDrag);
+			document.addEventListener('mouseup', stopResize);
+		});
+	}
+
+	COMYLI.filter = {
+		cleanFilter: function (scopeEl) {
+			var root = scopeEl || document;
+			var elements = root.querySelectorAll('.filter:not([type="submit"])');
+			for (var i = 0; i < elements.length; i++) {
+				elements[i].value = '';
+			}
+			var searchInput = root.querySelector('.volltextsuche input');
+			if (searchInput) {
+				searchInput.value = '';
+			}
+		},
+
+		switchBool: function (e) {
+			if (!$) return;
+			var a = $(e);
+			var input = a.prev('input');
+			var inputName = base64url_decode(input.attr('name'));
+
+			if (a.text() === 'or') {
+				a.text('and');
+				inputName = inputName.substr(0, 5) + 'A' + inputName.substr(6);
+			} else {
+				a.text('or');
+				inputName = inputName.substr(0, 5) + 'O' + inputName.substr(6);
+			}
+			input.attr('name', base64url_encode(inputName));
+		}
+	};
+
+	COMYLI.initCodeEditors = function (root) {
+		var scope = root || document;
+		if (typeof CodeJar === 'undefined' || typeof Prism === 'undefined') return;
+		scope.querySelectorAll('textarea.sql-editor').forEach(function (textarea) {
+			if (textarea.dataset.codejarInit === '1') return;
+			textarea.dataset.codejarInit = '1';
 			textarea.style.display = 'none';
-			
+
 			var wrapper = document.createElement('div');
 			wrapper.style.display = 'inline-block';
 			wrapper.style.verticalAlign = 'top';
 			wrapper.style.width = '100%';
-			
+
 			var editorDiv = document.createElement('div');
 			editorDiv.className = 'codejar-editor language-sql';
 			editorDiv.style.border = '1px solid #ccc';
@@ -74,900 +427,734 @@ jQuery( document ).ready(function( $ ) {
 			editorDiv.style.borderRadius = '4px';
 			editorDiv.style.boxShadow = 'inset 0 1px 1px rgba(0,0,0,0.075)';
 			editorDiv.style.width = '100%';
-			
-			// Inherit colors from parent for dark mode
 			editorDiv.style.background = 'inherit';
 			editorDiv.style.color = 'inherit';
-			
+
 			wrapper.appendChild(editorDiv);
 			textarea.parentNode.insertBefore(wrapper, textarea);
-			
-			var highlight = function(editor) {
+
+			var highlight = function (editor) {
 				editor.textContent = editor.textContent;
 				Prism.highlightElement(editor);
 			};
-			
+
 			var jar = CodeJar(editorDiv, highlight);
 			jar.updateCode(textarea.value);
-			
-			jar.onUpdate(function(code) {
+
+			jar.onUpdate(function (code) {
 				if (textarea.value !== code) {
 					textarea.value = code;
-					// Dispatch change event so ajaxSend triggers
-					textarea.dispatchEvent(new Event('change', {bubbles: true}));
+					textarea.dispatchEvent(new Event('change', { bubbles: true }));
 				}
 			});
-			
-			// To trigger activateAjaxSend on focus/input
-			editorDiv.addEventListener('focus', function() {
-				textarea.dispatchEvent(new Event('focus', {bubbles: true}));
+
+			editorDiv.addEventListener('focus', function () {
+				textarea.dispatchEvent(new Event('focus', { bubbles: true }));
 			});
-			editorDiv.addEventListener('input', function() {
-				textarea.dispatchEvent(new Event('input', {bubbles: true}));
+			editorDiv.addEventListener('input', function () {
+				textarea.dispatchEvent(new Event('input', { bubbles: true }));
 			});
 		});
-	}
-	
+	};
 
-});
+	COMYLI.initSelect2 = function (root) {
+		if (!$ || typeof $.fn === 'undefined' || typeof $.fn.select2 !== 'function') return;
+		var scope = root || document;
+		scope.querySelectorAll('.select2Input').forEach(function (select) {
+			if (select.dataset.select2Init === '1') return;
+			select.dataset.select2Init = '1';
 
-Element.prototype.getElementsByName = function (arg) {
-	var returnList = [];
-	(function BuildReturn(startPoint) {
-		for (var child in startPoint) {
-			if (startPoint[child].nodeType != 1) continue; //not an element
-			if (startPoint[child].getAttribute("name") == arg) returnList.push(startPoint[child]);
-			if (startPoint[child].childNodes.length > 0) {
-				BuildReturn(startPoint[child].childNodes);
+			var listName = select.dataset.fkList || select.dataset.list || '';
+			var datalistEl = listName ? document.getElementById(listName) : null;
+			var items = [];
+			if (datalistEl) {
+				datalistEl.querySelectorAll('option').forEach(function (opt) {
+					items.push({ id: opt.value, text: opt.value });
+				});
 			}
+
+			$(select).select2({
+				data: items,
+				allowClear: true
+			});
+
+			var hiddenInput = select.previousElementSibling;
+			var initialValues = [];
+			if (hiddenInput) {
+				try { initialValues = JSON.parse(hiddenInput.value || '[]'); } catch (e) {}
+			}
+
+			Array.from(select.options).forEach(function (option) {
+				option.selected = Array.isArray(initialValues) && initialValues.indexOf(option.value) !== -1;
+			});
+			select.dispatchEvent(new Event('change'));
+
+			$(select).on('change', function () {
+				if (!hiddenInput) return;
+				var selectedValues = Array.from(this.selectedOptions).map(function (option) {
+					return option.value;
+				});
+				var newValue = JSON.stringify(selectedValues);
+				if (hiddenInput.value !== newValue) {
+					hiddenInput.value = newValue;
+					hiddenInput.dispatchEvent(new Event('input', { bubbles: true }));
+					hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+				}
+			});
+		});
+	};
+
+	COMYLI.initResizeHandles = function (root) {
+		var scope = root || document;
+		scope.querySelectorAll('.table.select.comyli').forEach(function (tableContainer) {
+			var columns = tableContainer.querySelectorAll('.comyli-colnames-row > .td');
+			columns.forEach(function (column, index) {
+				if (index < columns.length - 1) {
+					addResizableHandle(column);
+				}
+			});
+		});
+	};
+
+	COMYLI.bindDelegatedEvents = function () {
+		if (COMYLI._delegatedBound) return;
+		COMYLI._delegatedBound = true;
+
+		// Stop sort trigger when clicking column info icon
+		document.addEventListener('click', function (e) {
+			if (e.target && e.target.closest('.comyli-col-info')) {
+				e.stopPropagation();
+				e.preventDefault();
+			}
+		}, true);
+
+		// Delegated sortable header click
+		document.addEventListener('click', function (e) {
+			var sortEl = e.target && typeof e.target.closest === 'function' ? e.target.closest('.comyli-sortable') : null;
+			if (!sortEl || e.target.closest('.column-resize-handle')) return;
+			var tableEl = sortEl.closest('.table.select.comyli');
+			if (!tableEl) return;
+
+			var uid = tableEl.dataset.comyliUid;
+			var form = uid ? document.getElementById('fsp_' + uid) : tableEl.querySelector('.comyli-fsp-form');
+			if (!form) return;
+
+			var orderKey = tableEl.dataset.orderKey || base64url_encode('order');
+			var dirKey = tableEl.dataset.dirKey || base64url_encode('d');
+			var sortCol = sortEl.dataset.sortCol || '';
+			var sortDir = sortEl.dataset.sortDir || 'ASC';
+
+			var setHidden = function (name, val) {
+				var inp = findFormFieldByName(form, name);
+				if (!inp) {
+					inp = document.createElement('input');
+					inp.type = 'hidden';
+					inp.name = name;
+					form.appendChild(inp);
+				}
+				inp.value = val;
+			};
+
+			setHidden(orderKey, sortCol);
+			setHidden(dirKey, sortDir);
+			submitFilterForm(form);
+		});
+
+		// Delegated cleanFilter link
+		document.addEventListener('click', function (e) {
+			var cleanBtn = e.target && typeof e.target.closest === 'function' ? e.target.closest('.cleanFilter') : null;
+			if (!cleanBtn) return;
+			e.preventDefault();
+			var tableEl = cleanBtn.closest('.table.select.comyli');
+			COMYLI.filter.cleanFilter(tableEl || document);
+			var uid = tableEl ? tableEl.dataset.comyliUid : null;
+			var form = (uid ? document.getElementById('fsp_' + uid) : null) || cleanBtn.closest('form') || (tableEl ? tableEl.querySelector('.comyli-fsp-form') : null);
+			submitFilterForm(form);
+		});
+
+		// Delegated page/limit change + bulk selection checkboxes
+		document.addEventListener('change', function (e) {
+			var target = e.target;
+			if (!target) return;
+
+			if (target.classList.contains('page') || target.classList.contains('limit')) {
+				submitFilterForm(target.form || target.closest('form'));
+				return;
+			}
+
+			if (target.classList.contains('comyli-bulk-select-all')) {
+				var tableEl = target.closest('.table.select.comyli');
+				if (!tableEl) return;
+				var rowChecks = tableEl.querySelectorAll('.comyli-bulk-check');
+				rowChecks.forEach(function (cb) { cb.checked = target.checked; });
+				updateBulkDelBtn(tableEl);
+			} else if (target.classList.contains('comyli-bulk-check')) {
+				var tableEl2 = target.closest('.table.select.comyli');
+				if (!tableEl2) return;
+				var selectAll = tableEl2.querySelector('.comyli-bulk-select-all');
+				var rowChecks2 = tableEl2.querySelectorAll('.comyli-bulk-check');
+				if (!target.checked && selectAll) selectAll.checked = false;
+				var allChecked = rowChecks2.length > 0 && Array.from(rowChecks2).every(function (c) { return c.checked; });
+				if (allChecked && selectAll) selectAll.checked = true;
+				updateBulkDelBtn(tableEl2);
+			}
+		});
+
+		// Delegated bulk delete button
+		document.addEventListener('click', function (e) {
+			var bulkBtn = e.target && typeof e.target.closest === 'function' ? e.target.closest('.comyli-bulk-delete-btn') : null;
+			if (!bulkBtn) return;
+			var tableEl = bulkBtn.closest('.table.select.comyli');
+			if (!tableEl) return;
+
+			if (!window.confirm('Wirklich alle ausgewählten Zeilen löschen?')) return;
+			var rowChecks = tableEl.querySelectorAll('.comyli-bulk-check');
+			var selectAll = tableEl.querySelector('.comyli-bulk-select-all');
+			rowChecks.forEach(function (cb) {
+				if (cb.checked) {
+					var tr = cb.closest('.tr');
+					if (tr) {
+						var btnDel = tr.querySelector('.btnDel');
+						if (btnDel) btnDel.click();
+					}
+				}
+			});
+			rowChecks.forEach(function (cb) { cb.checked = false; });
+			if (selectAll) selectAll.checked = false;
+			updateBulkDelBtn(tableEl);
+		});
+
+		// Delegated delete button with 10s Undo toast
+		document.addEventListener('click', function (e) {
+			var btn = e.target && typeof e.target.closest === 'function' ? e.target.closest('.btnDel') : null;
+			if (!btn) return;
+			e.preventDefault();
+			if (btn.dataset.deleting) return;
+			btn.dataset.deleting = '1';
+
+			var form = btn.closest('.formEdit');
+			if (!form) return;
+
+			var firstInput = form.querySelector('input:not([type="hidden"]):not([type="submit"]), select, textarea');
+			var rowName = firstInput ? firstInput.value : 'Eintrag';
+			if (rowName.length > 30) rowName = rowName.substring(0, 30) + '...';
+			if (!rowName) rowName = 'Eintrag';
+			var safeRowName = escapeHtml(rowName);
+
+			form.style.display = 'none';
+
+			var timerId = Date.now() + '_' + Math.floor(Math.random() * 1000);
+			var countdown = 10;
+			var toastObj = toast('<b>' + safeRowName + '</b> wird in <span id="cd-' + timerId + '">' + countdown + '</span>s gel&ouml;scht... <a href="#" class="undo-btn" data-timer="' + timerId + '" style="color: #ffaa00; text-decoration: underline; font-weight: bold; margin-left: 10px; cursor: pointer;">R&uuml;ckg&auml;ngig</a>', 10000);
+
+			var cdInterval = setInterval(function () {
+				countdown--;
+				var cdSpan = document.getElementById('cd-' + timerId);
+				if (cdSpan) cdSpan.innerText = String(countdown);
+				if (countdown <= 0) clearInterval(cdInterval);
+			}, 1000);
+
+			var executeDelete = function () {
+				clearInterval(cdInterval);
+				var xhttp = new XMLHttpRequest();
+				xhttp.onreadystatechange = function () {
+					if (this.readyState === 4 && this.status === 200) {
+						form.remove();
+					} else if (this.readyState === 4) {
+						form.style.display = '';
+						delete btn.dataset.deleting;
+						toast('Fehler beim L&ouml;schen: ' + escapeHtml(parseJsonTextResponse(this.responseText)));
+					}
+				};
+				var env = getComyliEnv(form);
+				var tbl = _get('table');
+				var tblParam = (tbl !== undefined && tbl !== 'undefined') ? '&' + base64url_encode('table') + '=' + tbl : '';
+				var uri = '' + getScriptAddr() + '?' + base64url_encode('noInterface') + '=1' + tblParam;
+				if (env && env.restUrl) {
+					var urlObj = new URL(env.restUrl + 'save', window.location.origin);
+					if (env.postId) urlObj.searchParams.set('comyli_id', env.postId);
+					if (env.ctx) urlObj.searchParams.set('comyli_ctx', env.ctx);
+					if (tbl !== undefined && tbl !== 'undefined') {
+						urlObj.searchParams.set(base64url_encode('table'), tbl);
+					}
+					uri = urlObj.toString();
+				}
+
+				xhttp.open('POST', uri, true);
+				if (env && env.nonce) xhttp.setRequestHeader('X-WP-Nonce', env.nonce);
+				var formData = new FormData(form);
+				formData.append('TA_btnSubmit', '[X]');
+				xhttp.send(formData);
+			};
+
+			var deleteTimer = setTimeout(executeDelete, 10000);
+
+			var undoBtn = document.querySelector('.undo-btn[data-timer="' + timerId + '"]');
+			if (undoBtn) {
+				undoBtn.addEventListener('click', function (e2) {
+					e2.preventDefault();
+					clearTimeout(deleteTimer);
+					clearInterval(cdInterval);
+					toastObj.close();
+					form.style.display = '';
+					delete btn.dataset.deleting;
+				});
+			}
+		});
+
+		// Delegated formEdit / formAdd validation & WP REST insert handling
+		document.addEventListener('submit', function (e) {
+			var form = e.target;
+			if (!form || !form.classList) return;
+
+			if (form.classList.contains('formEdit')) {
+				if (!isValidForm(form)) {
+					e.preventDefault();
+					return;
+				}
+				var envEdit = getComyliEnv(form);
+				if (envEdit && envEdit.restUrl) {
+					e.preventDefault();
+					_doAjaxSend(form);
+				}
+				return;
+			}
+
+			if (form.classList.contains('formAdd')) {
+				if (!isValidForm(form)) {
+					e.preventDefault();
+					return;
+				}
+				var envAdd = getComyliEnv(form);
+				if (envAdd && envAdd.restUrl) {
+					e.preventDefault();
+					var tableEl = form.closest('.table.select.comyli');
+					var tbl = _get('table');
+					var urlObj = new URL(envAdd.restUrl + 'save', window.location.origin);
+					if (envAdd.postId) urlObj.searchParams.set('comyli_id', envAdd.postId);
+					if (envAdd.ctx) urlObj.searchParams.set('comyli_ctx', envAdd.ctx);
+					if (tbl !== undefined && tbl !== 'undefined') {
+						urlObj.searchParams.set(base64url_encode('table'), tbl);
+					}
+
+					var formData = new FormData(form);
+					formData.append('TA_btnSubmit', '[Hinzuf]');
+
+					var xhttp = new XMLHttpRequest();
+					xhttp.onreadystatechange = function () {
+						if (this.readyState === 4 && this.status === 200) {
+							var resp = String(parseJsonTextResponse(this.responseText) || '');
+							toast(escapeHtml(resp.split('|TS|')[0]));
+							var fspForm = tableEl ? tableEl.querySelector('.comyli-fsp-form') : null;
+							if (fspForm) {
+								submitFilterForm(fspForm);
+							} else {
+								window.location.reload();
+							}
+						} else if (this.readyState === 4) {
+							toast('Fehler: ' + escapeHtml(parseJsonTextResponse(this.responseText)));
+						}
+					};
+					xhttp.open('POST', urlObj.toString(), true);
+					if (envAdd.nonce) xhttp.setRequestHeader('X-WP-Nonce', envAdd.nonce);
+					xhttp.send(formData);
+				}
+			}
+		});
+
+		// Delegated AJAX Filter / Sort / Pagination form submission (multi-table safe)
+		if ($ && typeof $ === 'function') {
+			$(document).on('submit', '.comyli-fsp-form', function (e) {
+				var submitter = e.originalEvent ? e.originalEvent.submitter : null;
+				if (submitter && submitter.name === base64url_encode('csv')) {
+					return; // Let the browser handle CSV download natively
+				}
+
+				e.preventDefault();
+				var formEl = this;
+				var tableEl = formEl.closest('.table.select.comyli');
+				var uid = tableEl ? tableEl.dataset.comyliUid : null;
+				var allTables = Array.from(document.querySelectorAll('.table.select.comyli'));
+				var tableIndex = tableEl ? allTables.indexOf(tableEl) : 0;
+
+				var url = '?' + $(formEl).serialize();
+				var tableWrapper = tableEl ? $(tableEl).parent() : $('.table.select.comyli').parent();
+				tableWrapper.css('opacity', '0.5');
+
+				$.ajax({
+					url: url,
+					type: 'GET',
+					success: function (response) {
+						var $resp = $('<div>').append($.parseHTML(response));
+						var $candidates = $resp.find('.table.select.comyli');
+						var $newTable = $();
+						if ($candidates.length === 1) {
+							$newTable = $candidates.first();
+						} else if ($candidates.length > 1) {
+							$newTable = $candidates.eq(tableIndex >= 0 ? tableIndex : 0);
+						}
+
+						if ($newTable.length && tableEl) {
+							var newTableEl = $newTable.get(0);
+							$(tableEl).replaceWith(newTableEl);
+							COMYLI.initTable(newTableEl);
+							COMYLI.initSelect2(newTableEl);
+							COMYLI.initResizeHandles(newTableEl);
+							COMYLI.initCodeEditors(newTableEl);
+							window.history.pushState({ path: url }, '', url);
+						}
+					},
+					complete: function () {
+						tableWrapper.css('opacity', '1');
+					}
+				});
+			});
+
+			$(window).on('popstate', function () {
+				location.reload();
+			});
 		}
-	})(this.childNodes);
-	return returnList;
-};
 
-//Sticky-Bar
-var navbar;
-var sticky;
-
-//Spaltenueberschriften
-var colnames;
-
-COMYLI.initTable = function(){
-	//Datentypen fuer sticky-Bar initialisieren
-	navbar = document.getElementById("colNames");
-	if(navbar){
-		if (navbar.dataset.comyliInit === '1') return;
-		navbar.dataset.comyliInit = '1';
-
-		sticky = navbar.offsetTop;
-//Alle Spaltenueberschriften erhalten Mindestbreite und scrollen mit
-		//macht die "fixed"-Spaltenueberschriften h-scrollbar
-		colnames = document.getElementsByClassName('colnames');
-		colsInit();
-		
 		if (!COMYLI._scrollBound) {
 			window.addEventListener('scroll', scrollHandler);
 			COMYLI._scrollBound = true;
 		}
+	};
+
+	COMYLI.initTable = function (root) {
+		COMYLI.bindDelegatedEvents();
+
+		var scope = root || document;
+		var tables = [];
+		if (scope !== document && scope.classList && scope.classList.contains('table') && scope.classList.contains('comyli')) {
+			tables = [scope];
+		} else {
+			tables = Array.from(scope.querySelectorAll('.table.select.comyli'));
+		}
+
+		if (!tables.length) return;
+
+		tables.forEach(function (tbl) {
+			if (tbl.dataset.comyliInit === '1') return;
+			tbl.dataset.comyliInit = '1';
+
+			colsInit(tbl);
+
+			tbl.querySelectorAll('.mkText').forEach(function (el) {
+				el.addEventListener('focusout', function () {
+					this.value = this.value.trim();
+				});
+			});
+			tbl.querySelectorAll('.mkBlob').forEach(function (el) {
+				el.addEventListener('change', function () {
+					extractFileName(this);
+				});
+			});
+			tbl.querySelectorAll('.textarea').forEach(function (el) {
+				var child = el.children[0];
+				if (child) {
+					child.addEventListener('focus', function () { this.classList.add('open'); });
+					child.addEventListener('focusout', function () { this.classList.remove('open'); });
+				}
+			});
+			tbl.querySelectorAll('.timestamp').forEach(function (el) {
+				el.size = '19';
+			});
+
+			addAjaxTo(tbl.getElementsByClassName('formEdit'));
+			COMYLI.initSelect2(tbl);
+			COMYLI.initResizeHandles(tbl);
+			COMYLI.initCodeEditors(tbl);
+		});
+
 		scrollHandler();
-		
+	};
 
-		//Datentypen
-		var elements = document.getElementsByClassName('mkText');
-		for(var i=0; i < elements.length; i++){
-			elements[i].addEventListener("focusout", function(){this.value.trim();});
-		}
-		var elements = document.getElementsByClassName('mkBlob');
-		for(var i=0; i < elements.length; i++){
-			elements[i].addEventListener("change", function(){extractFileName(this);});
-		}
-		var elements = document.getElementsByClassName('textarea');
-		for(var i=0; i < elements.length; i++){
-			e = elements[i].children[0];
-			e.addEventListener("focus", function(){this.classList.add('open');});
-			e.addEventListener("focusout", function(){this.classList.remove('open');});
-		}
-		//Alle Zeitstempel erhalten passende Breite und Pattern anstatt jeder einzeln via HTML
-		var elements = document.getElementsByClassName('timestamp');
-		for(var i=0; i < elements.length; i++){
-			elements[i].size = '15';
-			elements[i].pattern = '(0[0-9]|1[0-9]|2[0-9]|3[01]).(0[0-9]|1[012]).[0-9]{4} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}';
-		}
+	// Expose helpers globally where needed
+	window.base64url_encode = base64url_encode;
+	window.base64url_decode = base64url_decode;
+	window._get = _get;
+	window.toast = toast;
+	window.ajaxLoad = ajaxLoad;
+	window.isValidForm = isValidForm;
 
-		//Formular-Funktionen
-		COMYLI.filter.init();
-		
-		var elements = document.getElementsByClassName('limit');
-		for(var i=0; i < elements.length; i++){
-			elements[i].addEventListener("change", function(){this.form.submit();});
+	// ---------------------------------------------------------
+	// Live-Sync Collaboration Feature (3-State: Auto / An / Aus)
+	// ---------------------------------------------------------
+	COMYLI.syncMode = 'auto';
+	COMYLI.liveSyncInterval = null;
+	COMYLI.heartbeatInterval = null;
+	COMYLI.lastKnownMaxTs = null;
+	COMYLI.highPrecisionTimeout = null;
+
+	COMYLI.stopTimers = function () {
+		if (COMYLI.liveSyncInterval) clearInterval(COMYLI.liveSyncInterval);
+		if (COMYLI.heartbeatInterval) clearInterval(COMYLI.heartbeatInterval);
+		if (COMYLI.highPrecisionTimeout) clearTimeout(COMYLI.highPrecisionTimeout);
+		COMYLI.liveSyncInterval = null;
+		COMYLI.heartbeatInterval = null;
+		COMYLI.highPrecisionTimeout = null;
+	};
+
+	COMYLI.startHeartbeat = function () {
+		COMYLI.stopTimers();
+		COMYLI.performHeartbeat(true);
+		COMYLI.heartbeatInterval = setInterval(COMYLI.performHeartbeat, 15000);
+	};
+
+	function getPrimarySyncContainer() {
+		var btn = document.querySelector('.comyli-live-sync-btn');
+		return btn ? btn.closest('.table.select.comyli') : document.querySelector('.table.select.comyli');
+	}
+
+	COMYLI.performHeartbeat = function (isInit) {
+		if (document.hidden) return;
+		var container = getPrimarySyncContainer();
+		var env = getComyliEnv(container);
+
+		var urlObj;
+		if (env && env.restUrl) {
+			urlObj = new URL(env.restUrl + 'heartbeat', window.location.origin);
+			if (env.postId) urlObj.searchParams.set('comyli_id', env.postId);
+			if (env.ctx) urlObj.searchParams.set('comyli_ctx', env.ctx);
+		} else {
+			var uri = window.location.href;
+			var hashIndex = uri.indexOf('#');
+			if (hashIndex > -1) uri = uri.substring(0, hashIndex);
+			urlObj = new URL(uri);
+			urlObj.searchParams.set('action', 'heartbeat');
 		}
-		var elements = document.getElementsByClassName('formEdit');
-		for(var i=0; i < elements.length; i++){
-			elements[i].addEventListener("submit", function(){return isValidForm(this);});
-		}
-		var elements = document.getElementsByClassName('formAdd');
-		for(var i=0; i < elements.length; i++){
-			elements[i].addEventListener("submit", function(){return isValidForm(this);});
-		}
-		var elements = document.getElementsByClassName('btnDel');
-		for(var i=0; i < elements.length; i++){
-			elements[i].addEventListener("click", function(e){
-				e.preventDefault();
-				var btn = e.currentTarget;
-				if (btn.dataset.deleting) return;
-				btn.dataset.deleting = '1';
-				
-				var form = btn.closest('.formEdit');
-				if (!form) return;
-				
-				// Identify row
-				var firstInput = form.querySelector('input:not([type="hidden"]):not([type="submit"]), select, textarea');
-				var rowName = firstInput ? firstInput.value : 'Eintrag';
-				if (rowName.length > 30) rowName = rowName.substring(0, 30) + '...';
-				if (!rowName) rowName = 'Eintrag';
-				
-				// Hide the row immediately
-				form.style.display = 'none';
-				
-				var timerId = Date.now();
-				var countdown = 10;
-				var toastObj = toast('<b>' + rowName + '</b> wird in <span id="cd-' + timerId + '">' + countdown + '</span>s gel&ouml;scht... <a href="#" class="undo-btn" data-timer="' + timerId + '" style="color: #ffaa00; text-decoration: underline; font-weight: bold; margin-left: 10px; cursor: pointer;">R&uuml;ckg&auml;ngig</a>', 10000);
-				
-				var cdInterval = setInterval(function() {
-					countdown--;
-					var cdSpan = document.getElementById('cd-' + timerId);
-					if (cdSpan) cdSpan.innerText = countdown;
-					if (countdown <= 0) clearInterval(cdInterval);
-				}, 1000);
-				
-				var executeDelete = function() {
-					clearInterval(cdInterval);
-					var xhttp = new XMLHttpRequest();
-					xhttp.onreadystatechange = function() {
-						if (this.readyState == 4 && this.status == 200) {
-							form.remove(); // permanently remove from DOM
-						} else if (this.readyState == 4) {
-							form.style.display = ''; // restore on error
-							toast("Fehler beim L&ouml;schen: " + this.responseText);
-						}
-					};
-					var tbl = _get('table');
-					var tblParam = tbl !== undefined && tbl !== 'undefined' ? "&" + base64url_encode('table') + "=" + tbl : "";
-					var uri = "" + getScriptAddr() + "?" + base64url_encode('noInterface') + "=1" + tblParam;
-					if (typeof window.COMYLI_ENV !== 'undefined' && window.COMYLI_ENV.restUrl) {
-						var urlObj = new URL(window.COMYLI_ENV.restUrl + 'save', window.location.origin);
-						urlObj.searchParams.set('comyli_id', window.COMYLI_ENV.postId);
-						if (window.COMYLI_ENV.atts) {
-							urlObj.searchParams.set('comyli_atts', JSON.stringify(window.COMYLI_ENV.atts));
-						}
-						if (tbl !== undefined && tbl !== 'undefined') {
-							urlObj.searchParams.set(base64url_encode('table'), tbl);
-						}
-						uri = urlObj.toString();
+		var tbl = _get('table');
+		if (tbl) urlObj.searchParams.set(base64url_encode('table'), tbl);
+
+		var xhr = new XMLHttpRequest();
+		xhr.open('GET', urlObj.toString(), true);
+		if (env && env.nonce) xhr.setRequestHeader('X-WP-Nonce', env.nonce);
+		xhr.onreadystatechange = function () {
+			if (this.readyState === 4 && this.status === 200) {
+				var ts = String(parseJsonTextResponse(this.responseText) || '').trim();
+				if (ts && !ts.startsWith('<')) {
+					if (isInit === true) {
+						COMYLI.lastKnownMaxTs = ts;
+					} else if (COMYLI.lastKnownMaxTs && ts !== COMYLI.lastKnownMaxTs) {
+						COMYLI.lastKnownMaxTs = ts;
+						COMYLI.performLiveSync();
 					}
-					
-					xhttp.open("POST", uri, true);
-					if (typeof COMYLI_ENV !== 'undefined' && COMYLI_ENV.nonce) xhttp.setRequestHeader('X-WP-Nonce', COMYLI_ENV.nonce);
-					var formData = new FormData(form);
-					formData.append('TA_btnSubmit', '[X]');
-					xhttp.send(formData);
-				};
-				
-				var deleteTimer = setTimeout(executeDelete, 10000);
-				
-				// Re-fetch undoBtn since it was just added to DOM by toast()
-				var undoBtn = document.querySelector('.undo-btn[data-timer="' + timerId + '"]');
-				if(undoBtn) {
-					undoBtn.addEventListener('click', function(e2) {
-						e2.preventDefault();
-						clearTimeout(deleteTimer);
-						clearInterval(cdInterval);
-						toastObj.close();
-						form.style.display = ''; // restore
-						delete btn.dataset.deleting;
-					});
+				}
+			}
+		};
+		xhr.send();
+	};
+
+	COMYLI.performLiveSync = function () {
+		if (!COMYLI.isReady) return;
+		var container = getPrimarySyncContainer();
+		if (!container) return;
+
+		var clientRows = {};
+		container.querySelectorAll('.formEdit').forEach(function (row) {
+			var pk = null;
+			var lc = null;
+			row.querySelectorAll('input').forEach(function (inp) {
+				if (inp.name.startsWith('prim') && inp.name !== 'primlastChanged' && inp.name !== 'primlstChanged') {
+					pk = inp.value;
+				}
+				if (inp.name === 'lastChanged' || inp.name === 'lstChanged') {
+					lc = inp.value;
+				}
+			});
+			if (pk && lc) {
+				clientRows[pk] = lc;
+			}
+		});
+
+		var env = getComyliEnv(container);
+		var urlObj;
+		if (env && env.restUrl) {
+			urlObj = new URL(env.restUrl + 'syncState', window.location.origin);
+			if (env.postId) urlObj.searchParams.set('comyli_id', env.postId);
+			if (env.ctx) urlObj.searchParams.set('comyli_ctx', env.ctx);
+		} else {
+			var uri = window.location.href;
+			var hashIndex = uri.indexOf('#');
+			if (hashIndex > -1) uri = uri.substring(0, hashIndex);
+			urlObj = new URL(uri);
+			urlObj.searchParams.set('action', 'syncState');
+		}
+		var tbl = _get('table');
+		if (tbl) urlObj.searchParams.set(base64url_encode('table'), tbl);
+
+		var xhr = new XMLHttpRequest();
+		xhr.open('POST', urlObj.toString(), true);
+		if (env && env.nonce) xhr.setRequestHeader('X-WP-Nonce', env.nonce);
+		xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+		xhr.onreadystatechange = function () {
+			if (this.readyState === 4) {
+				if (this.status === 200) {
+					try {
+						var data = JSON.parse(this.responseText);
+						COMYLI.applySyncState(data, container);
+					} catch (e) {
+						console.error('Live-Sync Parsing Error', e);
+					}
+				} else {
+					var btn = container.querySelector('.comyli-live-sync-btn');
+					if (btn) COMYLI.toggleLiveSync(btn);
+				}
+			}
+		};
+		xhr.send('clientRows=' + encodeURIComponent(JSON.stringify(clientRows)));
+	};
+
+	COMYLI.applySyncState = function (data, targetContainer) {
+		if (!data || data.error) return;
+		var container = targetContainer || getPrimarySyncContainer();
+		if (!container) return;
+
+		if (data.delete && data.delete.length > 0) {
+			container.querySelectorAll('.formEdit').forEach(function (row) {
+				var pk = null;
+				row.querySelectorAll('input[type="hidden"]').forEach(function (inp) {
+					if (inp.name.startsWith('prim') && inp.name !== 'primlastChanged' && inp.name !== 'primlstChanged') {
+						pk = inp.value;
+					}
+				});
+				if (pk && data.delete.includes(pk)) {
+					row.remove();
 				}
 			});
 		}
-		
-		//SQL-ACE-Editor
-		
 
-		//Alle Zellen erhalten onChange = 'activateAjaxSend(this)'
-		//Alle Zellen erhalten onFocus  = 'ajaxSend(this)'
-		var elements;
-		elements = document.getElementsByClassName('formEdit');
-		addAjaxTo(elements);
-	}
-};
+		if (data.upsert && data.upsert.length > 0) {
+			var formEditRows = container.querySelectorAll('.formEdit');
+			data.upsert.forEach(function (upsertRow) {
+				var existingRow = null;
+				formEditRows.forEach(function (row) {
+					var pk = null;
+					row.querySelectorAll('input[type="hidden"]').forEach(function (inp) {
+						if (inp.name.startsWith('prim') && inp.name !== 'primlastChanged' && inp.name !== 'primlstChanged') {
+							pk = inp.value;
+						}
+					});
+					if (pk === upsertRow.id) {
+						existingRow = row;
+					}
+				});
 
-// Initialize table immediately when DOM is ready (do not wait for full window.load!)
-if (document.readyState === 'interactive' || document.readyState === 'complete') {
-	COMYLI.initTable();
-} else {
-	document.addEventListener('DOMContentLoaded', COMYLI.initTable);
-}
-window.addEventListener('load', COMYLI.initTable);
+				if (existingRow) {
+					if (existingRow.isSaving || existingRow.needsSave) return;
 
+					var lc = null;
+					existingRow.querySelectorAll('input[name="lastChanged"], input[name="lstChanged"]').forEach(function (inp) {
+						lc = inp.value;
+					});
+					if (lc && upsertRow.ts && upsertRow.ts <= lc) return;
 
-function colsInit(){
-	for(var i=0; i < colnames.length; i++){
-		colnames[i].style.minWidth = colnames[i].parentElement.getBoundingClientRect().width - 10;
-	}
-}
-
-function scrollHandler(){
-	if (window.pageYOffset >= sticky) {
-		navbar.classList.add("sticky");
-		for(var i=0; i < colnames.length; i++){
-			colnames[i].style.left = colnames[i].parentElement.getBoundingClientRect().left + "px";
-		}
-	}
-	else {
-		navbar.classList.remove("sticky");
-		for(var i=0; i < colnames.length; i++){
-			colnames[i].style.left = "0px";
-		}
-	}
-}
-
-function addAjaxTo(elements){
-	for(var i=0; i < elements.length; i++){
-		var form = elements[i];
-		for(var j=0; j < form.elements.length; j++){
-			var input = form.elements[j];
-			if (!input._hasComyliListener) {
-				input._hasComyliListener = true;
-				input.addEventListener("change", ajaxSend);
-				input.addEventListener("input", activateAjaxSend, true);
-			}
-		}
-	}	
-}
-function extractFileName(e){
-	var fullPath = e.value;
-	if (fullPath) {
-		var startIndex = (fullPath.indexOf('\\') >= 0 ? fullPath.lastIndexOf('\\') : fullPath.lastIndexOf('/'));
-		var filename = fullPath.substring(startIndex);
-		if (filename.indexOf('\\') === 0 || filename.indexOf('/') === 0) {
-			filename = filename.substring(1);
-		}
-		var nameField = e.parentElement.parentElement.getElementsByName(e.name + '_name')[0];
-		if(nameField !== undefined) nameField.value = filename;
-	}
-}
-
-var changedForm = null;
-function ajaxSend(e){ //onFocus
-    if (e) {
-        // Ignore synthetic programmatic events (e.g. from select2 init) that were not initiated by a user
-        if (e.isTrusted === false && (!e.detail || !e.detail.userAction)) {
-            return;
-        }
-    }
-    var form = (e && e.target) ? (e.target.form || (typeof e.target.closest === 'function' ? e.target.closest('form') : null)) : null;
-    if (!form && e && e.tagName === 'FORM') form = e;
-    if (!form) return;
-    if (form.isSaving) {
-        form.needsSave = true;
-        return;
-    }
-    _doAjaxSend(form);
-}
-
-function _doAjaxSend(form) {
-    var lcs = form.querySelectorAll('input[name="lastChanged"], input[name="lstChanged"]');
-    var debugVals = [];
-    lcs.forEach(function(inp) { debugVals.push(inp.name + '=' + inp.value); });
-    console.log('COMYLI PRE-SEND: Timestamps im Formular:', debugVals);
-    form.isSaving = true;
-    form.needsSave = false;
-
-    var xhttp = new XMLHttpRequest();
-    xhttp.onreadystatechange = function() {
-        if (this.readyState == 4 && this.status == 200) {
-            var response = this.responseText;
-            if (typeof response === 'string' && response.startsWith('"') && response.endsWith('"')) {
-                try { response = JSON.parse(response); } catch(e) {}
-            }
-            var tsParts = response.split('|TS|');
-            toast(tsParts[0]);
-            if (tsParts.length > 1 && tsParts[1]) {
-                                var inputs = form.querySelectorAll('input[name="lastChanged"], input[name="lstChanged"]');
-                inputs.forEach(function(inp) {
-                    inp.value = tsParts[1].trim();
-                });
-            }
-            ajaxLoad(form);
-            form.isSaving = false;
-            if (form.needsSave) {
-                _doAjaxSend(form);
-            }
-        } else if(this.readyState == 4) {
-            var errText = this.responseText;
-            if (typeof errText === 'string' && errText.startsWith('"') && errText.endsWith('"')) {
-                try { errText = JSON.parse(errText); } catch(e) {}
-            }
-            toast("Fehler: " + errText);
-            console.log(this.responseText);
-            form.isSaving = false;
-        }
-    };
-    var tbl = _get('table');
-    var tblParam = tbl !== undefined && tbl !== 'undefined' ? "&" + base64url_encode('table') + "=" + tbl : "";
-    var uriStr = "" + getScriptAddr() + "?" + base64url_encode('noInterface') + "=1&" + base64url_encode('debug') + "=" + _get('debug') + tblParam;
-
-    if(isValidForm(form)){
-        var formData = new FormData(form);
-        if (typeof window.COMYLI_ENV !== 'undefined' && window.COMYLI_ENV.restUrl) {
-            var urlObj = new URL(window.COMYLI_ENV.restUrl + 'save', window.location.origin);
-            urlObj.searchParams.set('comyli_id', window.COMYLI_ENV.postId);
-            if (window.COMYLI_ENV.atts) {
-                urlObj.searchParams.set('comyli_atts', JSON.stringify(window.COMYLI_ENV.atts));
-            }
-            if (tbl !== undefined && tbl !== 'undefined') {
-                urlObj.searchParams.set(base64url_encode('table'), tbl);
-            }
-            uriStr = urlObj.toString();
-        }
-        formData.append('TA_btnSubmit', '[S]');
-        xhttp.open("POST", uriStr, true);
-        if (typeof COMYLI_ENV !== 'undefined' && COMYLI_ENV.nonce) xhttp.setRequestHeader('X-WP-Nonce', COMYLI_ENV.nonce);
-        xhttp.send(formData);
-    } else {
-        form.isSaving = false;
-    }
-}
-function activateAjaxSend(){ //onInput
-	changedForm = (this && typeof this.closest === 'function') ? this.closest('.formEdit') : this.parentElement.parentElement;
-	if (typeof COMYLI !== 'undefined' && typeof COMYLI.triggerActiveSync === 'function') COMYLI.triggerActiveSync();
-}
-
-function _get(reqKey) {
-	var uri = window.location.href.split("?");
-	if(uri.length > 1){
-		var vars = uri[1].split("&");
-		var query_string = {};
-		for (var i = 0; i < vars.length; i++) {
-			var pair = vars[i].split("=");
-			var key = decodeURIComponent(pair[0]);
-			var value = decodeURIComponent(pair[1]);
-			// If first entry with this name
-			if (typeof query_string[key] === "undefined") {
-				query_string[key] = decodeURIComponent(value);
-				// If second entry with this name
-			} else if (typeof query_string[key] === "string") {
-				var arr = [query_string[key], decodeURIComponent(value)];
-				query_string[key] = arr;
-				// If third or later entry with this name
-			} else {
-				query_string[key].push(decodeURIComponent(value));
-			}
-		}
-		return query_string[base64url_encode(reqKey)];
-	}
-}
-
-function getScriptAddr(){
-	return '//' + window.location.hostname + window.location.pathname;
-}
-
-function base64url_encode(data) { 
-	return window.btoa(data)
-		.replace(/\+/g, '-')
-		.replace(/\//g, '_')
-		.replace(/=+$/gm, '');
-}
-
-function base64url_decode(data) {
-	var padLen = (4 - (data.length % 4)) % 4;
-	return window.atob(
-		data.replace(/_/g, '/')
-			.replace(/-/g, '+')
-			.padEnd(data.length + padLen, '=')
-	);
-}
-function display(e,s){
-	e.style.display = s;
-}
-
-function toast(text, timeoutMs){
-    timeoutMs = timeoutMs || 3000;
-    var container = document.getElementById("toast-container");
-    if (!container) {
-        container = document.createElement("div");
-        container.id = "toast-container";
-        document.body.appendChild(container);
-    }
-    
-    var t = document.createElement("div");
-    t.className = "toast";
-    t.innerHTML = text;
-    container.appendChild(t);
-    
-    var tTimeout;
-    var closeToast = function() {
-        t.classList.add("closing");
-        setTimeout(function() {
-            if (t.parentElement) t.remove();
-        }, 300);
-    };
-    
-    tTimeout = setTimeout(closeToast, timeoutMs);
-    
-    // Pause on hover
-    t.addEventListener('mouseenter', function() {
-        clearTimeout(tTimeout);
-    });
-    
-    // Resume on leave
-    t.addEventListener('mouseleave', function() {
-        tTimeout = setTimeout(closeToast, timeoutMs);
-    });
-    
-    // Allow closing manually by passing a special ID or just clicking?
-    // Not explicitly requested, but good to have.
-    return {
-        close: closeToast,
-        element: t
-    };
-}
-
-function ajaxLoad(form){ //einfach alle primX mit dem wert von X ueberschreiben
-	//TODO: echtes AJAX-load via SQL: SELECT * FROM [table] WHERE [alle X von primX]
-	var e;
-	var primOld;
-	var primNew;
-	for (var i = 0; i < form.elements.length; i++) {
-		e = form.elements[i];
-		if(e.name.substr(0,4)=='prim'){
-			primOld = e;
-			primNew = form.getElementsByName(e.name.substr(4))[0];
-			if( primNew.tagName == 'INPUT' || primNew.tagName == 'TEXTAREA' ){
-				primOld.value = primNew.value;
-			}
-			if(primNew.tagName == 'SELECT'){
-				primOld.value = primNew.options[primNew.selectedIndex].value;
-			}
-		}
-	}
-}
-
-
-function isValidForm(form) {
-	var e;
-	for (var i = 0; i < form.elements.length; i++) {
-		e = form.elements[i];
-		//Alle Element durchlaufen und pruefen, ob Input mit Liste
-		if(e.list != null){
-			if(e.list.id.substring(0,8) != 'optional' && e.list.dataset.strict == "true"){
-				var proof = 0;
-				for (var j = 0; j < e.list.options.length; j++) { //Pruefe ob Wert Teil der zugehoerigen Liste, Wenn JA:
-					if(e.list.options[j].value == e.value || e.value == ''){
-						proof = 1;
-						break;
+					if (existingRow.contains(document.activeElement)) {
+						existingRow.style.boxShadow = 'inset 0 0 0 2px #ef4444';
+						existingRow.title = 'Ein Kollege hat diesen Datensatz gerade geändert! Bitte neu laden.';
+					} else {
+						var temp = document.createElement('div');
+						temp.innerHTML = upsertRow.html;
+						var newRow = temp.firstElementChild;
+						if (newRow) {
+							existingRow.replaceWith(newRow);
+							newRow.style.backgroundColor = '#dcfce7';
+							setTimeout(function () { newRow.style.backgroundColor = ''; }, 2000);
+						}
+					}
+				} else {
+					var tempAdd = document.createElement('div');
+					tempAdd.innerHTML = upsertRow.html;
+					var newRowAdd = tempAdd.firstElementChild;
+					if (newRowAdd) {
+						var formAdd = container.querySelector('.formAdd');
+						if (formAdd) {
+							container.insertBefore(newRowAdd, formAdd);
+						} else {
+							container.appendChild(newRowAdd);
+						}
+						newRowAdd.style.backgroundColor = '#dcfce7';
+						setTimeout(function () { newRowAdd.style.backgroundColor = ''; }, 2000);
 					}
 				}
-				if(proof == 0){
-					toast('"' + e.value + '" ist kein Wert aus der vorgegebnenen Liste.');
-					return false;
+			});
+
+			COMYLI.initSelect2(container);
+			addAjaxTo(container.getElementsByClassName('formEdit'));
+		}
+	};
+
+	COMYLI.triggerActiveSync = function () {
+		if (COMYLI.syncMode !== 'auto') return;
+
+		COMYLI.stopTimers();
+		COMYLI.liveSyncInterval = setInterval(COMYLI.performLiveSync, 10000);
+
+		if (COMYLI.highPrecisionTimeout) clearTimeout(COMYLI.highPrecisionTimeout);
+		COMYLI.highPrecisionTimeout = setTimeout(function () {
+			if (COMYLI.syncMode === 'auto') {
+				var btn = document.querySelector('.comyli-live-sync-btn');
+				if (btn) {
+					btn.innerHTML = '&#128259; Live-Sync (Auto)';
+					btn.style.backgroundColor = '#3b82f6';
+					btn.style.color = 'white';
 				}
+				COMYLI.startHeartbeat();
 			}
+		}, 60000);
+	};
+
+	COMYLI.toggleLiveSync = function (btn) {
+		if (COMYLI.syncMode === 'auto') {
+			COMYLI.syncMode = 'active';
+			btn.innerHTML = '&#128259; Live-Sync (An)';
+			btn.style.backgroundColor = '#22c55e';
+			btn.style.color = 'white';
+			COMYLI.stopTimers();
+			COMYLI.liveSyncInterval = setInterval(COMYLI.performLiveSync, 10000);
+			COMYLI.performLiveSync();
+		} else if (COMYLI.syncMode === 'active') {
+			COMYLI.syncMode = 'off';
+			btn.innerHTML = '&#128259; Live-Sync (Aus)';
+			btn.style.backgroundColor = '';
+			btn.style.color = '';
+			COMYLI.stopTimers();
+		} else {
+			COMYLI.syncMode = 'auto';
+			btn.innerHTML = '&#128259; Live-Sync (Auto)';
+			btn.style.backgroundColor = '#3b82f6';
+			btn.style.color = 'white';
+			COMYLI.stopTimers();
+			COMYLI.startHeartbeat();
 		}
-		
-		//Alle required-Elemente befuellt?
-		if( (e.tagName == 'INPUT' || e.tagName == 'TEXTAREA') && e.required){
-			if(e.value == ''){
-				toast('Spalte "' + e.name + '" muss gefuellt sein.');
-				return false;
-			}
+	};
+
+	document.addEventListener('visibilitychange', function () {
+		if (COMYLI.syncMode === 'auto' && !document.hidden) {
+			COMYLI.performHeartbeat();
 		}
-		if(e.tagName == 'SELECT' && e.required){
-			if(e.options[e.selectedIndex].value == ''){
-				toast('Spalte "' + e.name + '" muss gefuellt sein.');
-				return false;
-			}
-		}
-		
-		//Alle Elemente gueltig? (pattern)
-		if(!e.validity.valid){
-			toast('Spalte "' + e.name + '" entspricht nicht dem vorgegebenen Format: ' + e.pattern);
-			return false;
+	});
+
+	function bootstrapFrontend() {
+		COMYLI.initTable(document);
+		var btn = document.querySelector('.comyli-live-sync-btn');
+		if (btn) {
+			COMYLI.syncMode = 'auto';
+			btn.innerHTML = '&#128259; Live-Sync (Auto)';
+			btn.style.backgroundColor = '#3b82f6';
+			btn.style.color = 'white';
+			COMYLI.startHeartbeat();
 		}
 	}
-	
-	return true;
-}
 
-function padWithZeroes(n, width) {
-	while(n.length < width){
-		n = '0' + n;
+	if (document.readyState === 'interactive' || document.readyState === 'complete') {
+		bootstrapFrontend();
+	} else {
+		document.addEventListener('DOMContentLoaded', bootstrapFrontend);
 	}
-	return n;
-}
+	window.addEventListener('load', function () {
+		COMYLI.initTable(document);
+	});
 
-function setList(obj,list){
-	obj.setAttribute("list", list);
-}
-
-
-
-document.addEventListener('DOMContentLoaded', () => {
-    const tableContainer = document.querySelector('.table');
-    if (!tableContainer) return;
-
-    // Funktion zum HinzufÃƒÆ’Ã‚Â¼gen des Handles zu einer Spalte
-    function addResizableHandle(column) {
-        // Handle als unsichtbares DOM-Element erstellen
-        const handle = document.createElement('div');
-        handle.classList.add('column-resize-handle');
-        column.appendChild(handle);
-
-        let currentColumn, nextColumn, startX, initialWidth, initialNextWidth;
-
-        // Startet den Ziehvorgang
-        const startResize = (e) => {
-            currentColumn = column;
-            // Finde die nÃƒÆ’Ã‚Â¤chste Spalte, die auch eine 'resizable-column' ist
-            nextColumn = currentColumn.nextElementSibling && currentColumn.nextElementSibling.classList.contains('resizable-column') 
-                           ? currentColumn.nextElementSibling 
-                           : null;
-
-            startX = e.clientX;
-            initialWidth = currentColumn.offsetWidth;
-            initialNextWidth = nextColumn ? nextColumn.offsetWidth : 0;
-            
-            // Verhindert Textauswahl wÃƒÆ’Ã‚Â¤hrend des Ziehens
-            document.body.style.userSelect = 'none'; 
-            document.body.style.cursor = 'col-resize';
-
-            document.addEventListener('mousemove', onDrag);
-            document.addEventListener('mouseup', stopResize);
-        };
-
-        // FÃƒÆ’Ã‚Â¼hrt die GrÃƒÆ’Ã‚Â¶ÃƒÆ’Ã…Â¸enÃƒÆ’Ã‚Â¤nderung wÃƒÆ’Ã‚Â¤hrend des Ziehens aus
-        const onDrag = (e) => {
-            if (!currentColumn) return;
-
-            const diffX = e.clientX - startX;
-            const newWidth = initialWidth + diffX;
-            const newNextWidth = initialNextWidth - diffX;
-            
-            // Nur fortfahren, wenn die Spalte nicht zu schmal wird (z.B. min 50px)
-            if (newWidth > 50) {
-                currentColumn.style.width = newWidth + 'px';
-                currentColumn.style.maxWidth = newWidth + 'px';
-                
-                // Passt auch die Breite der nÃƒÆ’Ã‚Â¤chsten Spalte an, falls vorhanden,
-                // um die Gesamtbreite der Tabelle konstant zu halten.
-                //if (nextColumn && newNextWidth > 50) {
-                //    nextColumn.style.width = newNextWidth + 'px';
-                //}
-            }
-        };
-
-        // Beendet den Ziehvorgang
-        const stopResize = () => {
-            document.removeEventListener('mousemove', onDrag);
-            document.removeEventListener('mouseup', stopResize);
-            document.body.style.userSelect = '';
-            document.body.style.cursor = '';
-            currentColumn = null;
-            nextColumn = null;
-        };
-
-        handle.addEventListener('mousedown', startResize);
-    }
-
-    const columns = tableContainer.querySelectorAll('#colNames > .td');
-    columns.forEach((column, index) => {
-        if (index < columns.length - 1) {
-             addResizableHandle(column);
-        }
-    });
-
-    // Wichtig: FÃƒÆ’Ã‚Â¼ge das Handle auch zu den Spalten in den folgenden "Zeilen" hinzu,
-    // um die gesamte "Tabelle" funktional zu machen. 
-    // Idealerweise mÃƒÆ’Ã‚Â¼ssten die BreitenÃƒÆ’Ã‚Â¤nderungen alle Elemente der Spalte betreffen. 
-    // FÃƒÆ’Ã‚Â¼r eine komplette LÃƒÆ’Ã‚Â¶sung mÃƒÆ’Ã‚Â¼sste man die BreitenÃƒÆ’Ã‚Â¤nderung auf alle Zellen 
-    // in der gleichen Spaltenposition (Index) anwenden.
-    // Beim display: table Layout genÃƒÆ’Ã‚Â¼gt es oft, nur die Breiten der Header zu ÃƒÆ’Ã‚Â¤ndern,
-            // wenn table-layout: fixed gesetzt ist.
-});
-
-COMYLI.performLiveSync = function() {
-    if (!COMYLI.isReady) return;
-    
-    var clientRows = {};
-    var formEditRows = document.querySelectorAll('.table.select.comyli .formEdit');
-    formEditRows.forEach(function(row) {
-                var pk = null;
-        var lc = null;
-        var inputs = row.querySelectorAll('input');
-        inputs.forEach(function(inp) {
-            if (inp.name.startsWith('prim') && inp.name !== 'primlastChanged' && inp.name !== 'primlstChanged') {
-                pk = inp.value;
-            }
-            if (inp.name === 'lastChanged' || inp.name === 'lstChanged') {
-                lc = inp.value;
-            }
-        });
-        if (pk && lc) {
-            clientRows[pk] = lc;
-        }
-    });
-
-        var uri = window.location.href;
-    var hashIndex = uri.indexOf('#');
-    if (hashIndex > -1) {
-        uri = uri.substring(0, hashIndex);
-    }
-    var urlObj = new URL(uri);
-    urlObj.searchParams.set('action', 'syncState');
-    
-    if (typeof window.COMYLI_ENV !== 'undefined' && window.COMYLI_ENV.restUrl) {
-        urlObj = new URL(window.COMYLI_ENV.restUrl + 'syncState', window.location.origin);
-        urlObj.searchParams.set('comyli_id', window.COMYLI_ENV.postId);
-        if (window.COMYLI_ENV.atts) {
-            urlObj.searchParams.set('comyli_atts', JSON.stringify(window.COMYLI_ENV.atts));
-        }
-    }
-    var tbl = _get('table');
-    if (tbl) urlObj.searchParams.set(base64url_encode('table'), tbl);
-    
-    var xhr = new XMLHttpRequest();
-    xhr.open("POST", urlObj.toString(), true);
-    if (typeof COMYLI_ENV !== 'undefined' && COMYLI_ENV.nonce) xhr.setRequestHeader('X-WP-Nonce', COMYLI_ENV.nonce);
-    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-    xhr.onreadystatechange = function() {
-        if (this.readyState === 4) {
-            if (this.status === 200) {
-                try {
-                    var data = JSON.parse(this.responseText);
-                    COMYLI.applySyncState(data);
-                } catch(e) {
-                    console.error("Live-Sync Parsing Error", e);
-                }
-            } else {
-                console.warn("Live-Sync fehlerhaft, deaktiviere...");
-                var btn = document.getElementById('btnLiveSync');
-                if (btn) COMYLI.toggleLiveSync(btn);
-            }
-        }
-    };
-    xhr.send('clientRows=' + encodeURIComponent(JSON.stringify(clientRows)));
-};
-
-COMYLI.applySyncState = function(data) {
-    if (!data || data.error) return;
-    console.log('COMYLI LIVESYNC: Server sendet', data.upsert ? data.upsert.length : 0, 'Zeilen zum Update.');
-
-    var container = document.querySelector('.table.select.comyli');
-    if (!container) return;
-
-    // Remove deleted rows
-    if (data.delete && data.delete.length > 0) {
-        var formEditRows = document.querySelectorAll('.table.select.comyli .formEdit');
-        formEditRows.forEach(function(row) {
-            var inputs = row.querySelectorAll('input[type="hidden"]');
-            var pk = null;
-            inputs.forEach(function(inp) {
-                if (inp.name.startsWith('prim') && inp.name !== 'primlastChanged' && inp.name !== 'primlstChanged') {
-                    pk = inp.value;
-                }
-            });
-            if (pk && data.delete.includes(pk)) {
-                row.remove();
-            }
-        });
-    }
-
-    // Upsert updated/new rows
-    if (data.upsert && data.upsert.length > 0) {
-        var formEditRows = document.querySelectorAll('.table.select.comyli .formEdit');
-        
-        data.upsert.forEach(function(upsertRow) {
-            var existingRow = null;
-            formEditRows.forEach(function(row) {
-                var inputs = row.querySelectorAll('input[type="hidden"]');
-                var pk = null;
-                inputs.forEach(function(inp) {
-                    if (inp.name.startsWith('prim') && inp.name !== 'primlastChanged' && inp.name !== 'primlstChanged') {
-                        pk = inp.value;
-                    }
-                });
-                if (pk === upsertRow.id) {
-                    existingRow = row;
-                }
-            });
-
-                        if (existingRow) {
-                if (existingRow.isSaving || existingRow.needsSave) {
-                    return; // Skip replacing this row
-                }
-                
-                var lc = null;
-                                var inputs = existingRow.querySelectorAll('input[name="lastChanged"], input[name="lstChanged"]');
-                inputs.forEach(function(inp) {
-                    lc = inp.value;
-                });
-                console.log('COMYLI LIVESYNC: Zeile ' + upsertRow.id + ' | Client-HTML-TS: ' + lc + ' | Server-DB-TS: ' + upsertRow.ts);
-                if (lc && upsertRow.ts && upsertRow.ts <= lc) {
-                    console.log('COMYLI LIVESYNC: Server-TS ist aelter/gleich, ueberspringe Update.');
-                    console.log('COMYLI LIVESYNC: Debug Row from Server:', upsertRow.debug_row);
-                    return; // Server is sending older or equal data than what we just successfully saved!
-                }
-                
-                // Check if user is typing in this row
-                if (existingRow.contains(document.activeElement)) {
-                    // Collision!
-                    existingRow.style.boxShadow = "inset 0 0 0 2px #ef4444";
-                    existingRow.title = "Ein Kollege hat diesen Datensatz gerade geaendert! Bitte neu laden.";
-                } else {
-                    // Safe to replace
-                    var temp = document.createElement('div');
-                    temp.innerHTML = upsertRow.html;
-                    var newRow = temp.firstElementChild;
-                    console.log('COMYLI LIVESYNC: Ersetze HTML der Zeile. HTML:', upsertRow.html);
-                    console.log('COMYLI LIVESYNC: Debug Row from Server:', upsertRow.debug_row);
-                    existingRow.replaceWith(newRow);
-                    newRow.style.backgroundColor = "#dcfce7"; // flash green
-                    setTimeout(function() { newRow.style.backgroundColor = ""; }, 2000);
-                }
-            } else {
-                // New row (Append to bottom, but before the insert row if it exists)
-                var temp = document.createElement('div');
-                temp.innerHTML = upsertRow.html;
-                var newRow = temp.firstElementChild;
-                var formAdd = container.querySelector('.formAdd');
-                if (formAdd) {
-                    container.insertBefore(newRow, formAdd);
-                } else {
-                    container.appendChild(newRow);
-                }
-                newRow.style.backgroundColor = "#dcfce7";
-                setTimeout(function() { newRow.style.backgroundColor = ""; }, 2000);
-            }
-        });
-        
-        // Re-bind Select2 if available
-        if (typeof initSelect2 === 'function') initSelect2();
-        var elements = document.getElementsByClassName('formEdit');
-        if (typeof addAjaxTo === 'function') addAjaxTo(elements);
-    }
-};
-
-// ---------------------------------------------------------
-// Live-Sync Collaboration Feature (3-State: Auto / An / Aus)
-// ---------------------------------------------------------
-COMYLI.syncMode = 'auto'; // 'auto' | 'active' | 'off'
-COMYLI.liveSyncInterval = null;
-COMYLI.heartbeatInterval = null;
-COMYLI.lastKnownMaxTs = null;
-COMYLI.highPrecisionTimeout = null;
-
-COMYLI.stopTimers = function() {
-    if (COMYLI.liveSyncInterval) clearInterval(COMYLI.liveSyncInterval);
-    if (COMYLI.heartbeatInterval) clearInterval(COMYLI.heartbeatInterval);
-    if (COMYLI.highPrecisionTimeout) clearTimeout(COMYLI.highPrecisionTimeout);
-    COMYLI.liveSyncInterval = null;
-    COMYLI.heartbeatInterval = null;
-    COMYLI.highPrecisionTimeout = null;
-};
-
-COMYLI.startHeartbeat = function() {
-    COMYLI.stopTimers();
-    COMYLI.performHeartbeat(true); // init
-    COMYLI.heartbeatInterval = setInterval(COMYLI.performHeartbeat, 15000);
-};
-
-COMYLI.performHeartbeat = function(isInit) {
-    if (document.hidden) return; // Pause heartbeat if tab is hidden
-    
-    var urlObj;
-    if (typeof window.COMYLI_ENV !== 'undefined' && window.COMYLI_ENV.restUrl) {
-        urlObj = new URL(window.COMYLI_ENV.restUrl + 'heartbeat', window.location.origin);
-        urlObj.searchParams.set('comyli_id', window.COMYLI_ENV.postId);
-        if (window.COMYLI_ENV.atts) {
-            urlObj.searchParams.set('comyli_atts', JSON.stringify(window.COMYLI_ENV.atts));
-        }
-    } else {
-        var uri = window.location.href;
-        var hashIndex = uri.indexOf('#');
-        if (hashIndex > -1) uri = uri.substring(0, hashIndex);
-        urlObj = new URL(uri);
-        urlObj.searchParams.set('action', 'heartbeat');
-    }
-    var tbl = _get('table');
-    if (tbl) urlObj.searchParams.set(base64url_encode('table'), tbl);
-
-    var xhr = new XMLHttpRequest();
-    xhr.open('GET', urlObj.toString(), true);
-    if (typeof COMYLI_ENV !== 'undefined' && COMYLI_ENV.nonce) xhr.setRequestHeader('X-WP-Nonce', COMYLI_ENV.nonce);
-    xhr.onreadystatechange = function() {
-        if (this.readyState === 4 && this.status === 200) {
-            var ts = this.responseText.trim();
-            if (typeof ts === 'string' && ts.startsWith('"') && ts.endsWith('"')) {
-                try { ts = JSON.parse(ts); } catch(e) {}
-            }
-            if (ts && !ts.startsWith('<')) {
-                if (isInit === true) {
-                    COMYLI.lastKnownMaxTs = ts;
-                } else if (COMYLI.lastKnownMaxTs && ts !== COMYLI.lastKnownMaxTs) {
-                    COMYLI.lastKnownMaxTs = ts;
-                    COMYLI.performLiveSync();
-                }
-            }
-        }
-    };
-    xhr.send();
-};
-
-COMYLI.triggerActiveSync = function() {
-    if (COMYLI.syncMode !== 'auto') return;
-    
-    COMYLI.stopTimers();
-    COMYLI.liveSyncInterval = setInterval(COMYLI.performLiveSync, 10000);
-    
-    if (COMYLI.highPrecisionTimeout) clearTimeout(COMYLI.highPrecisionTimeout);
-    COMYLI.highPrecisionTimeout = setTimeout(function() {
-        if (COMYLI.syncMode === 'auto') {
-            var btn = document.getElementById('btnLiveSync');
-            if (btn) {
-                btn.innerHTML = '&#128259; Live-Sync (Auto)';
-                btn.style.backgroundColor = '#3b82f6';
-                btn.style.color = 'white';
-            }
-            COMYLI.startHeartbeat();
-        }
-    }, 60000);
-};
-
-COMYLI.toggleLiveSync = function(btn) {
-    if (COMYLI.syncMode === 'auto') {
-        COMYLI.syncMode = 'active';
-        btn.innerHTML = '&#128259; Live-Sync (An)';
-        btn.style.backgroundColor = '#22c55e'; // Green
-        btn.style.color = 'white';
-        COMYLI.stopTimers();
-        COMYLI.liveSyncInterval = setInterval(COMYLI.performLiveSync, 10000);
-        COMYLI.performLiveSync();
-    } else if (COMYLI.syncMode === 'active') {
-        COMYLI.syncMode = 'off';
-        btn.innerHTML = '&#128259; Live-Sync (Aus)';
-        btn.style.backgroundColor = '';
-        btn.style.color = '';
-        COMYLI.stopTimers();
-    } else {
-        COMYLI.syncMode = 'auto';
-        btn.innerHTML = '&#128259; Live-Sync (Auto)';
-        btn.style.backgroundColor = '#3b82f6'; // Blue
-        btn.style.color = 'white';
-        COMYLI.stopTimers();
-        COMYLI.startHeartbeat();
-    }
-};
-
-document.addEventListener('visibilitychange', function() {
-    if (COMYLI.syncMode === 'auto' && !document.hidden) {
-        COMYLI.performHeartbeat();
-    }
-});
-
-// Auto-start Live-Sync in Auto mode on page load if the table supports it
-function initLiveSyncOnLoad() {
-    var btn = document.getElementById('btnLiveSync');
-    if (btn) {
-        COMYLI.syncMode = 'auto';
-        btn.innerHTML = '&#128259; Live-Sync (Auto)';
-        btn.style.backgroundColor = '#3b82f6';
-        btn.style.color = 'white';
-        COMYLI.startHeartbeat();
-    }
-}
-
-if (document.readyState === 'interactive' || document.readyState === 'complete') {
-    initLiveSyncOnLoad();
-} else {
-    document.addEventListener('DOMContentLoaded', initLiveSyncOnLoad);
-}
+})(window, document, typeof jQuery !== 'undefined' ? jQuery : null);
