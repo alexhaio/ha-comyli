@@ -275,7 +275,8 @@
     .comyli { border: none; box-shadow: none; margin: 0; }
     .comyli .table > .tr > .td:nth-of-type(1),
     .comyli .table > .tr.formAdd,
-    .comyli .comyli-no-print {
+    .comyli .comyli-no-print,
+    .comyli-floating-scrollbar {
         display: none !important;
     }
     .comyli .table > .tr > .td > input { border: none !important; }
@@ -320,6 +321,7 @@
     flex-grow: 1; 
     padding: 20px; 
     min-width: 0; 
+    overflow-x: auto;
 }
 @media (max-width: 768px) { 
     .comyli.comyli-layout { flex-direction: column; } 
@@ -475,6 +477,92 @@
     border: 1px solid #fecaca;
     color: #b91c1c;
 }
+
+/* ==========================================================================
+   Floating Sticky-Bottom Horizontal Scrollbar Proxy
+   ========================================================================== */
+.comyli-floating-scrollbar {
+    position: fixed;
+    bottom: 0;
+    z-index: 9990;
+    display: none;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    box-sizing: border-box;
+    background: rgba(248, 250, 252, 0.95);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border-top: 1px solid #cbd5e1;
+    border-left: 1px solid #e2e8f0;
+    border-right: 1px solid #e2e8f0;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    box-shadow: 0 -4px 14px rgba(15, 23, 42, 0.1);
+}
+
+.comyli-floating-scroll-btn {
+    flex: 0 0 auto;
+    width: 26px;
+    height: 22px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    line-height: 1;
+    color: #334155;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+
+.comyli-floating-scroll-btn:hover:not(:disabled) {
+    background: #e2e8f0;
+    color: #0f172a;
+}
+
+.comyli-floating-scroll-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.comyli-floating-scroll-track {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    height: 16px;
+    scrollbar-width: thin;
+    scrollbar-color: #64748b #e2e8f0;
+}
+
+.comyli-floating-scroll-track::-webkit-scrollbar {
+    height: 12px;
+}
+
+.comyli-floating-scroll-track::-webkit-scrollbar-track {
+    background: #e2e8f0;
+    border-radius: 9999px;
+}
+
+.comyli-floating-scroll-track::-webkit-scrollbar-thumb {
+    background: #64748b;
+    border-radius: 9999px;
+    border: 2px solid #e2e8f0;
+}
+
+.comyli-floating-scroll-track::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+}
+
+.comyli-floating-scroll-spacer {
+    height: 1px;
+    pointer-events: none;
+}
+
 
 
 

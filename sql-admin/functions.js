@@ -865,9 +865,190 @@ COMYLI.isReady = true;
 			COMYLI.initSelect2(tbl);
 			COMYLI.initResizeHandles(tbl);
 			COMYLI.initCodeEditors(tbl);
+			COMYLI.initFloatingScrollbar(tbl);
 		});
 
 		scrollHandler();
+	};
+
+	COMYLI.initFloatingScrollbar = function (tbl) {
+		if (!tbl) return;
+		var scrollContainer = tbl.closest('.comyli-main') || tbl.parentElement;
+		if (!scrollContainer) return;
+
+		var state = scrollContainer._comyliFloatingState;
+		if (!state) {
+			var bar = document.createElement('div');
+			bar.className = 'comyli-floating-scrollbar comyli-no-print';
+			bar.setAttribute('aria-hidden', 'true');
+
+			var btnLeft = document.createElement('button');
+			btnLeft.type = 'button';
+			btnLeft.tabIndex = -1;
+			btnLeft.className = 'comyli-floating-scroll-btn comyli-floating-scroll-left';
+			btnLeft.title = 'Nach links scrollen';
+			btnLeft.innerHTML = '&#9664;';
+
+			var track = document.createElement('div');
+			track.className = 'comyli-floating-scroll-track';
+
+			var spacer = document.createElement('div');
+			spacer.className = 'comyli-floating-scroll-spacer';
+			track.appendChild(spacer);
+
+			var btnRight = document.createElement('button');
+			btnRight.type = 'button';
+			btnRight.tabIndex = -1;
+			btnRight.className = 'comyli-floating-scroll-btn comyli-floating-scroll-right';
+			btnRight.title = 'Nach rechts scrollen';
+			btnRight.innerHTML = '&#9654;';
+
+			bar.appendChild(btnLeft);
+			bar.appendChild(track);
+			bar.appendChild(btnRight);
+			document.body.appendChild(bar);
+
+			state = {
+				bar: bar,
+				track: track,
+				spacer: spacer,
+				btnLeft: btnLeft,
+				btnRight: btnRight,
+				syncingFromContainer: false,
+				syncingFromTrack: false,
+				rafPending: false,
+				observedTable: null,
+				resizeObserver: null
+			};
+			scrollContainer._comyliFloatingState = state;
+
+			var updateButtonStates = function () {
+				var maxScroll = Math.max(0, scrollContainer.scrollWidth - scrollContainer.clientWidth);
+				btnLeft.disabled = scrollContainer.scrollLeft <= 1;
+				btnRight.disabled = scrollContainer.scrollLeft >= maxScroll - 1;
+			};
+
+			var update = function () {
+				state.rafPending = false;
+				if (!scrollContainer.isConnected) {
+					bar.style.display = 'none';
+					if (state.resizeObserver) {
+						state.resizeObserver.disconnect();
+					}
+					return;
+				}
+
+				var overflow = scrollContainer.scrollWidth - scrollContainer.clientWidth;
+				if (overflow <= 2) {
+					bar.style.display = 'none';
+					return;
+				}
+
+				var rect = scrollContainer.getBoundingClientRect();
+				var vh = window.innerHeight || document.documentElement.clientHeight;
+				var vw = window.innerWidth || document.documentElement.clientWidth;
+				var isVisible = rect.width > 40 && rect.top < (vh - 60) && rect.bottom > vh;
+
+				if (!isVisible) {
+					bar.style.display = 'none';
+					return;
+				}
+
+				var visibleLeft = Math.max(0, Math.round(rect.left));
+				var visibleRight = Math.min(vw, Math.round(rect.right));
+				var visibleWidth = Math.max(0, visibleRight - visibleLeft);
+				if (visibleWidth <= 40) {
+					bar.style.display = 'none';
+					return;
+				}
+
+				bar.style.display = 'flex';
+				bar.style.left = visibleLeft + 'px';
+				bar.style.width = visibleWidth + 'px';
+
+				var trackWidth = track.clientWidth;
+				if (trackWidth > 0) {
+					spacer.style.width = (trackWidth + overflow) + 'px';
+				}
+
+				if (!state.syncingFromTrack && Math.abs(track.scrollLeft - scrollContainer.scrollLeft) >= 1.5) {
+					state.syncingFromContainer = true;
+					track.scrollLeft = scrollContainer.scrollLeft;
+					requestAnimationFrame(function () {
+						state.syncingFromContainer = false;
+					});
+				}
+				updateButtonStates();
+			};
+
+			var scheduleUpdate = function () {
+				if (state.rafPending) return;
+				state.rafPending = true;
+				requestAnimationFrame(update);
+			};
+
+			state.update = update;
+			state.scheduleUpdate = scheduleUpdate;
+
+			scrollContainer.addEventListener('scroll', function () {
+				if (state.syncingFromTrack) return;
+				if (Math.abs(track.scrollLeft - scrollContainer.scrollLeft) >= 1.5) {
+					state.syncingFromContainer = true;
+					track.scrollLeft = scrollContainer.scrollLeft;
+					requestAnimationFrame(function () {
+						state.syncingFromContainer = false;
+					});
+				}
+				updateButtonStates();
+			}, { passive: true });
+
+			track.addEventListener('scroll', function () {
+				if (state.syncingFromContainer) return;
+				if (Math.abs(scrollContainer.scrollLeft - track.scrollLeft) >= 1.5) {
+					state.syncingFromTrack = true;
+					scrollContainer.scrollLeft = track.scrollLeft;
+					requestAnimationFrame(function () {
+						state.syncingFromTrack = false;
+					});
+				}
+				updateButtonStates();
+			}, { passive: true });
+
+			bar.addEventListener('wheel', function (e) {
+				if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && e.deltaY !== 0) {
+					e.preventDefault();
+					scrollContainer.scrollLeft += e.deltaY;
+				}
+			}, { passive: false });
+
+			btnLeft.addEventListener('click', function () {
+				var step = Math.max(180, Math.round(scrollContainer.clientWidth * 0.45));
+				scrollContainer.scrollBy({ left: -step, behavior: 'smooth' });
+			});
+
+			btnRight.addEventListener('click', function () {
+				var step = Math.max(180, Math.round(scrollContainer.clientWidth * 0.45));
+				scrollContainer.scrollBy({ left: step, behavior: 'smooth' });
+			});
+
+			window.addEventListener('scroll', scheduleUpdate, { passive: true });
+			window.addEventListener('resize', scheduleUpdate, { passive: true });
+
+			if (typeof ResizeObserver !== 'undefined') {
+				state.resizeObserver = new ResizeObserver(scheduleUpdate);
+				state.resizeObserver.observe(scrollContainer);
+			}
+		}
+
+		if (state.resizeObserver && state.observedTable !== tbl) {
+			if (state.observedTable) {
+				try { state.resizeObserver.unobserve(state.observedTable); } catch (e) {}
+			}
+			state.resizeObserver.observe(tbl);
+			state.observedTable = tbl;
+		}
+
+		state.scheduleUpdate();
 	};
 
 	// Expose helpers globally where needed
