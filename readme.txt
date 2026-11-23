@@ -3,7 +3,7 @@ Contributors: alexhaio, ha
 Tags: mysql, admin, table, reporting, crud, rest-api, gutenberg, chart, cron, export
 Requires at least: 6.0
 Tested up to: 6.7
-Stable tag: 3.5.3
+Stable tag: 3.5.4
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -88,6 +88,11 @@ Note: Placeholders are automatically escaped and quoted as SQL literals where ap
 4. Add tables or queries via Gutenberg blocks, shortcode `[comyli_table query="MyQuery" layout="clean"]`, or in PHP via `echo comyli_render(['query' => 'MyQuery']);`.
 
 == Changelog ==
+
+= 3.5.4 =
+* Improved: Added per-user, per-table/query visual column visibility toggle (`👁 Spalten` popover) stored in `wp_usermeta` (`_comyli_hidden_cols`) via `POST /wp-json/comyli/v1/user-columns` (with `localStorage` fallback for guests) without removing hidden/required/automatic form inputs from the DOM.
+* Fixed: Removed `position: sticky; top: 32px` on `display: table-cell` header cells (`.comyli .comyli-colnames-row > .td`) and legacy JS `left` header offset adjustments that caused individual column headers to shift downward over data rows.
+* Improved: Anchored the full-text search input inside `.comyli-search-cell` and added `data-col` attributes to search row filler cells so hiding columns never hides the search box or misaligns the search row.
 
 = 3.5.3 =
 * Improved: Added an interactive filter help info button (`ⓘ`) next to the filter action controls that opens a popover with practical operator and wildcard examples (`=`, `!=`, `!~`, `%`, `_`, `>=`, `<`, date ranges).

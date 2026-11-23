@@ -158,7 +158,7 @@ class ConfigHandler {
 
     public function __construct(array $override = []) {
         $defaults = [
-            'version' => 30503,
+            'version' => 30504,
             'sqlLogDuration' => 60 * 60 * 24 * 7,
             'path' => [
                 'codejar' => 'assets/codejar.js',
@@ -937,7 +937,7 @@ class HtmlRenderer {
         }
     }
 
-    public function renderTable(string $table, array $fields, array $rows, bool $editMode, bool $insertMode, int $totalRows, int $page, int $limit): string {
+    public function renderTable(string $table, array $fields, array $rows, bool $editMode, bool $insertMode, int $totalRows, int $page, int $limit, string $qryName = ''): string {
         $this->renderDatalists();
 
         static $instanceCounter = 0;
@@ -948,7 +948,46 @@ class HtmlRenderer {
         $orderKey = Security::base64urlEncode('order');
         $dirKey = Security::base64urlEncode('d');
 
-        $out = "<div class='table select comyli' data-comyli-uid='" . Security::escapeAttr($this->uid) . "' data-order-key='" . Security::escapeAttr($orderKey) . "' data-dir-key='" . Security::escapeAttr($dirKey) . "'>";
+        $visibleFieldNames = [];
+        $allColsMeta = [];
+        $paramMap = $this->config->getArray('param');
+        foreach ($fields as $f) {
+            if (!$this->isColVisible($table, $f['name'])) {
+                continue;
+            }
+            $visibleFieldNames[] = $f['name'];
+            $paramStr = (string)($paramMap[$f['name']] ?? '');
+            $isReq = !empty($f['flag']['primary']) || (bool)preg_match('/\brequired\b/i', $paramStr);
+            $allColsMeta[] = [
+                'name'     => $f['name'],
+                'required' => $isReq,
+                'primary'  => !empty($f['flag']['primary']),
+            ];
+        }
+        $visibleFieldsCount = count($visibleFieldNames);
+
+        $colContextKey = $qryName !== ''
+            ? 'qry:' . preg_replace('/[^a-zA-Z0-9_-]/', '_', strtolower($qryName))
+            : 'tbl:' . (int)$this->config->get('comyli_id', 0) . ':' . preg_replace('/[^a-zA-Z0-9_]/', '', $table);
+
+        $initialHiddenCols = [];
+        if (function_exists('is_user_logged_in') && is_user_logged_in() && function_exists('get_user_meta')) {
+            $savedMap = get_user_meta(get_current_user_id(), '_comyli_hidden_cols', true);
+            if (is_array($savedMap) && !empty($savedMap[$colContextKey]) && is_array($savedMap[$colContextKey])) {
+                foreach ($savedMap[$colContextKey] as $hCol) {
+                    $hColStr = (string)$hCol;
+                    if ($hColStr !== '_actions' && in_array($hColStr, $visibleFieldNames, true)) {
+                        $initialHiddenCols[] = $hColStr;
+                    }
+                }
+                $initialHiddenCols = array_values(array_unique($initialHiddenCols));
+            }
+        }
+
+        $allColsJson = function_exists('wp_json_encode') ? (string)wp_json_encode($allColsMeta) : (string)json_encode($allColsMeta);
+        $hiddenColsJson = function_exists('wp_json_encode') ? (string)wp_json_encode($initialHiddenCols) : (string)json_encode($initialHiddenCols);
+
+        $out = "<div class='table select comyli' data-comyli-uid='" . Security::escapeAttr($this->uid) . "' data-order-key='" . Security::escapeAttr($orderKey) . "' data-dir-key='" . Security::escapeAttr($dirKey) . "' data-col-context='" . Security::escapeAttr($colContextKey) . "' data-active-table='" . Security::escapeAttr($table) . "' data-active-qry='" . Security::escapeAttr($qryName) . "' data-all-cols='" . Security::escapeAttr($allColsJson) . "' data-hidden-cols='" . Security::escapeAttr($hiddenColsJson) . "'>";
 
         // Output Filter Form for this table instance
         $out .= "<form id='" . Security::escapeAttr($fspId) . "' class='comyli-fsp-form' method='GET'>";
@@ -979,10 +1018,12 @@ class HtmlRenderer {
         }
         $out .= "</form>";
 
-        $visibleFieldsCount = 0;
-        foreach ($fields as $f) {
-            if ($this->isColVisible($table, $f['name'])) $visibleFieldsCount++;
+        $hiddenCssRules = [];
+        foreach ($initialHiddenCols as $hCol) {
+            $escapedSelectorCol = str_replace(['\\', '"'], ['\\\\', '\\"'], $hCol);
+            $hiddenCssRules[] = ".table.select.comyli[data-comyli-uid=\"{$this->uid}\"] .td[data-col=\"{$escapedSelectorCol}\"] { display: none !important; }";
         }
+        $out .= "<style class='comyli-user-hidden-css'>" . implode(' ', $hiddenCssRules) . "</style>";
 
         // Pagination Menu
         if ($this->config->get('pages')) {
@@ -1020,6 +1061,14 @@ class HtmlRenderer {
                 $out .= " <button type='submit' form='" . Security::escapeAttr($fspId) . "' name='" . Security::base64urlEncode('csv') . "' value='1' style='margin-left:20px;' title='Als CSV exportieren'>&#128190; CSV</button>";
             }
 
+            // Column Visibility Toggle Button
+            if (!empty($allColsMeta)) {
+                $hiddenCount = count($initialHiddenCols);
+                $colBtnClass = 'comyli-cols-btn' . ($hiddenCount > 0 ? ' has-hidden' : '');
+                $colBtnLabel = $hiddenCount > 0 ? "&#128065; Spalten ($hiddenCount ausgeblendet)" : "&#128065; Spalten";
+                $out .= " <button type='button' class='$colBtnClass' aria-expanded='false' title='Spalten individuell ein-/ausblenden'>$colBtnLabel</button>";
+            }
+
             $hasPK = false;
             $hasLC = false;
             foreach ($fields as $field) {
@@ -1048,10 +1097,10 @@ class HtmlRenderer {
         if ($this->config->get('filter')) {
             $searchKey = Security::base64urlEncode('search');
             $searchValue = isset($_GET[$searchKey]) ? (string)Security::unslash($_GET[$searchKey]) : '';
-            $out .= "<div class='tr comyli-no-print searchRow'><div class='td'><input form='" . Security::escapeAttr($fspId) . "' type='submit' value='Suchen &#9775;'></div>";
-            $out .= "<div class='td volltextsuche'><input form='" . Security::escapeAttr($fspId) . "' name='" . Security::escapeAttr($searchKey) . "' value='" . Security::escapeAttr($searchValue) . "' placeholder='Volltextsuche'></div>";
-            for ($i = 0; $i < max(0, $visibleFieldsCount - 1); $i++) {
-                $out .= "<div class='td'></div>";
+            $out .= "<div class='tr comyli-no-print searchRow'>";
+            $out .= "<div class='td comyli-search-cell' data-col='_actions'><input form='" . Security::escapeAttr($fspId) . "' type='submit' value='Suchen &#9775;'><div class='volltextsuche'><input form='" . Security::escapeAttr($fspId) . "' name='" . Security::escapeAttr($searchKey) . "' value='" . Security::escapeAttr($searchValue) . "' placeholder='Volltextsuche'></div></div>";
+            foreach ($visibleFieldNames as $vCol) {
+                $out .= "<div class='td' data-col='" . Security::escapeAttr($vCol) . "'></div>";
             }
             $out .= "</div>";
 
@@ -2186,7 +2235,7 @@ class App {
         }
 
         $htmlRenderer = new HtmlRenderer($this->config, $this->db);
-        echo $htmlRenderer->renderTable($table, $fields, $rows, (bool)$this->config->get('edit'), (bool)$this->config->get('insert'), $totalRows, $page, $limit);
+        echo $htmlRenderer->renderTable($table, $fields, $rows, (bool)$this->config->get('edit'), (bool)$this->config->get('insert'), $totalRows, $page, $limit, $qryName);
         echo "</div>"; // End comyli-main
         echo "</div>"; // End comyli-layout
     }

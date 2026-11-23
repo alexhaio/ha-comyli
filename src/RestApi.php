@@ -36,6 +36,14 @@ class RestApi {
             'permission_callback' => '__return_true',
         ]);
 
+        register_rest_route('comyli/v1', '/user-columns', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'handleSaveUserColumns'],
+            'permission_callback' => static function (): bool {
+                return function_exists('is_user_logged_in') && is_user_logged_in();
+            },
+        ]);
+
         // AP4: Headless REST-API Endpoints
         register_rest_route('comyli/v1', '/query/(?P<name>[a-zA-Z0-9_-]+)', [
             'methods'             => 'GET',
@@ -306,6 +314,90 @@ class RestApi {
         $response = new \WP_REST_Response($output, $statusCode);
         $response->header('Content-Type', 'text/plain; charset=utf-8');
         return $response;
+    }
+
+    /**
+     * Persists per-user visually hidden columns scoped to the active table or query context.
+     */
+    public function handleSaveUserColumns(\WP_REST_Request $request) {
+        $ctxToken = (string)$request->get_param('comyli_ctx');
+        $ctxData = Shortcode::verifyContext($ctxToken);
+        if ($ctxData === null) {
+            return new \WP_REST_Response(['error' => 'Ungültiger Kontext-Token.'], 403);
+        }
+
+        $jsonBody = $request->get_json_params();
+        $body = is_array($jsonBody) ? $jsonBody : [];
+
+        $comyliId = (int)($ctxData['comyli_id'] ?? 0);
+        $activeQry = trim((string)($body['active_qry'] ?? $request->get_param('active_qry') ?? ($ctxData['query'] ?? ($ctxData['qry'] ?? ''))));
+        $activeTable = trim((string)($body['active_table'] ?? $request->get_param('active_table') ?? ($ctxData['table'] ?? ($ctxData['stdTbl'] ?? ''))));
+
+        if ($activeQry !== '') {
+            if (!Permissions::can_view_query($activeQry, $comyliId ?: null)) {
+                return new \WP_REST_Response(['error' => 'Keine Berechtigung für diese Abfrage.'], 403);
+            }
+            $contextKey = 'qry:' . preg_replace('/[^a-zA-Z0-9_-]/', '_', strtolower($activeQry));
+        } else {
+            $allowedTables = [];
+            if (!empty($ctxData['tables'])) {
+                $allowedTables = array_values(array_filter(array_map('trim', explode(',', (string)$ctxData['tables']))));
+            }
+            foreach (['table', 'stdTbl'] as $k) {
+                if (!empty($ctxData[$k]) && !in_array((string)$ctxData[$k], $allowedTables, true)) {
+                    $allowedTables[] = (string)$ctxData[$k];
+                }
+            }
+            $tblClean = (string)preg_replace('/[^a-zA-Z0-9_]/', '', $activeTable);
+            if ($tblClean === '' && !empty($allowedTables)) {
+                $tblClean = (string)preg_replace('/[^a-zA-Z0-9_]/', '', $allowedTables[0]);
+            }
+            if ($tblClean === '' || (!empty($allowedTables) && !in_array($tblClean, $allowedTables, true))) {
+                return new \WP_REST_Response(['error' => 'Ungültige Tabelle für Kontext.'], 403);
+            }
+            if (!Permissions::can_view_table($tblClean)) {
+                return new \WP_REST_Response(['error' => 'Keine Berechtigung für diese Tabelle.'], 403);
+            }
+            $contextKey = 'tbl:' . $comyliId . ':' . $tblClean;
+        }
+
+        $rawHidden = $body['hidden_cols'] ?? $request->get_param('hidden_cols');
+        $cleanCols = [];
+        if (is_array($rawHidden)) {
+            foreach ($rawHidden as $col) {
+                if (!is_scalar($col)) {
+                    continue;
+                }
+                $colName = trim(sanitize_text_field((string)$col));
+                if ($colName !== '' && $colName !== '_actions' && strlen($colName) <= 128) {
+                    $cleanCols[] = $colName;
+                }
+                if (count($cleanCols) >= 200) {
+                    break;
+                }
+            }
+        }
+        $cleanCols = array_values(array_unique($cleanCols));
+
+        $userId = get_current_user_id();
+        $savedMap = get_user_meta($userId, '_comyli_hidden_cols', true);
+        if (!is_array($savedMap)) {
+            $savedMap = [];
+        }
+
+        if (empty($cleanCols)) {
+            unset($savedMap[$contextKey]);
+        } else {
+            $savedMap[$contextKey] = $cleanCols;
+        }
+
+        update_user_meta($userId, '_comyli_hidden_cols', $savedMap);
+
+        return new \WP_REST_Response([
+            'success'     => true,
+            'context_key' => $contextKey,
+            'hidden_cols' => $cleanCols,
+        ], 200);
     }
 
     /**

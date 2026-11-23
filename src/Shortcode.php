@@ -409,10 +409,11 @@ class Shortcode {
         $restUrl = function_exists('rest_url') ? esc_url_raw(rest_url('comyli/v1/')) : '';
         $nonce = function_exists('wp_create_nonce') ? wp_create_nonce('wp_rest') : '';
         $wpEnv = [
-            'restUrl' => $restUrl,
-            'nonce'   => $nonce,
-            'postId'  => $postId,
-            'ctx'     => $signedCtx,
+            'restUrl'    => $restUrl,
+            'nonce'      => $nonce,
+            'postId'     => $postId,
+            'ctx'        => $signedCtx,
+            'isLoggedIn' => function_exists('is_user_logged_in') ? is_user_logged_in() : false,
         ];
         $config['comyli_ctx'] = $signedCtx;
         $config['wp_env'] = $wpEnv;

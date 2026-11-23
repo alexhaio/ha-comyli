@@ -113,14 +113,14 @@ class Blocks {
             'ha-comyli-blocks-js',
             $url . 'js/blocks.js',
             ['wp-blocks', 'wp-element', 'wp-components', 'wp-block-editor'],
-            '3.5.3'
+            '3.5.4'
         );
 
         wp_register_style(
             'ha-comyli-blocks-css',
             $url . 'css/blocks.css',
             [],
-            '3.5.3'
+            '3.5.4'
         );
 
         // Discover CPT-defined queries (from QueryManager)
