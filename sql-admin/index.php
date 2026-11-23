@@ -158,7 +158,7 @@ class ConfigHandler {
 
     public function __construct(array $override = []) {
         $defaults = [
-            'version' => 30502,
+            'version' => 30503,
             'sqlLogDuration' => 60 * 60 * 24 * 7,
             'path' => [
                 'codejar' => 'assets/codejar.js',
@@ -1055,7 +1055,7 @@ class HtmlRenderer {
             }
             $out .= "</div>";
 
-            $out .= "<div class='tr comyli-no-print'><div class='td' data-col='_actions'><input form='" . Security::escapeAttr($fspId) . "' class='filter' type='submit' value='Filtern'><a href='#' class='cleanFilter'>&#129529;</a></div>";
+            $out .= "<div class='tr comyli-no-print'><div class='td comyli-filter-actions' data-col='_actions'><input form='" . Security::escapeAttr($fspId) . "' class='filter' type='submit' value='Filtern'><a href='#' class='cleanFilter' title='Alle Filter zurücksetzen'>&#129529;</a><button type='button' class='comyli-filter-help-btn' aria-label='Filter-Beispiele anzeigen' aria-expanded='false' title='Filter-Beispiele anzeigen'>&#9432;</button></div>";
             foreach ($fields as $field) {
                 if (!$this->isColVisible($table, $field['name'])) continue;
 

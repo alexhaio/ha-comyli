@@ -3,7 +3,7 @@ Contributors: alexhaio, ha
 Tags: mysql, admin, table, reporting, crud, rest-api, gutenberg, chart, cron, export
 Requires at least: 6.0
 Tested up to: 6.7
-Stable tag: 3.5.2
+Stable tag: 3.5.3
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -88,6 +88,9 @@ Note: Placeholders are automatically escaped and quoted as SQL literals where ap
 4. Add tables or queries via Gutenberg blocks, shortcode `[comyli_table query="MyQuery" layout="clean"]`, or in PHP via `echo comyli_render(['query' => 'MyQuery']);`.
 
 == Changelog ==
+
+= 3.5.3 =
+* Improved: Added an interactive filter help info button (`ⓘ`) next to the filter action controls that opens a popover with practical operator and wildcard examples (`=`, `!=`, `!~`, `%`, `_`, `>=`, `<`, date ranges).
 
 = 3.5.2 =
 * Improved: Added viewport-pinned floating horizontal scrollbar proxy (`.comyli-floating-scrollbar`) with bidirectionally synced scroll position, `ResizeObserver` width tracking, `◀` / `▶` quick-scroll buttons, and vertical mouse-wheel translation when hovering the bar.

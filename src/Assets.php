@@ -17,7 +17,7 @@ class Assets {
     }
 
     private static function getVersion(?Config $config = null): string {
-        $version = '3.5.2';
+        $version = '3.5.3';
         $path = $config ? $config->plugin['path'] : dirname(__DIR__);
         if (function_exists('get_file_data') && file_exists($path . '/ha-comyli.php')) {
             $pluginData = get_file_data($path . '/ha-comyli.php', ['Version' => 'Version']);

@@ -572,6 +572,39 @@ COMYLI.isReady = true;
 			submitFilterForm(form);
 		});
 
+		// Delegated filter help popover
+		document.addEventListener('click', function (e) {
+			var helpBtn = e.target && typeof e.target.closest === 'function' ? e.target.closest('.comyli-filter-help-btn') : null;
+			var existingPopover = document.getElementById('comyli-filter-help-popover');
+
+			if (helpBtn) {
+				e.preventDefault();
+				e.stopPropagation();
+				if (existingPopover && existingPopover._triggerBtn === helpBtn && existingPopover.classList.contains('is-open')) {
+					COMYLI.closeFilterHelp();
+					return;
+				}
+				COMYLI.openFilterHelp(helpBtn);
+				return;
+			}
+
+			if (existingPopover && existingPopover.classList.contains('is-open')) {
+				if (e.target && typeof e.target.closest === 'function' && e.target.closest('.comyli-filter-help-close')) {
+					COMYLI.closeFilterHelp();
+					return;
+				}
+				if (!existingPopover.contains(e.target)) {
+					COMYLI.closeFilterHelp();
+				}
+			}
+		});
+
+		document.addEventListener('keydown', function (e) {
+			if (e.key === 'Escape') {
+				COMYLI.closeFilterHelp();
+			}
+		});
+
 		// Delegated page/limit change + bulk selection checkboxes
 		document.addEventListener('change', function (e) {
 			var target = e.target;
@@ -819,6 +852,75 @@ COMYLI.isReady = true;
 			window.addEventListener('scroll', scrollHandler);
 			COMYLI._scrollBound = true;
 		}
+	};
+
+	COMYLI.closeFilterHelp = function () {
+		var pop = document.getElementById('comyli-filter-help-popover');
+		if (!pop) return;
+		pop.classList.remove('is-open');
+		if (pop._triggerBtn) {
+			pop._triggerBtn.setAttribute('aria-expanded', 'false');
+			pop._triggerBtn = null;
+		}
+	};
+
+	COMYLI.openFilterHelp = function (btn) {
+		if (!btn) return;
+		var pop = document.getElementById('comyli-filter-help-popover');
+		if (!pop) {
+			pop = document.createElement('div');
+			pop.id = 'comyli-filter-help-popover';
+			pop.className = 'comyli-filter-help-popover comyli-no-print';
+			pop.setAttribute('role', 'dialog');
+			pop.setAttribute('aria-label', 'Filter-Hilfe');
+			pop.innerHTML =
+				'<div class="comyli-filter-help-header">' +
+					'<strong>Filter-Beispiele &amp; Operatoren</strong>' +
+					'<button type="button" class="comyli-filter-help-close" aria-label="Schließen">&times;</button>' +
+				'</div>' +
+				'<div class="comyli-filter-help-body">' +
+					'<div class="comyli-filter-help-group">' +
+						'<div class="comyli-filter-help-subtitle">Text- &amp; Mustersuche</div>' +
+						'<ul>' +
+							'<li><code>Meier</code> <span>enthält „Meier“ (Standard)</span></li>' +
+							'<li><code>= Meier</code> <span>exakte Übereinstimmung</span></li>' +
+							'<li><code>!= Leer</code> <span>ungleich „Leer“</span></li>' +
+							'<li><code>!~ Müller</code> <span>enthält <b>nicht</b> „Müller“</span></li>' +
+							'<li><code>M%</code> / <code>_ab%</code> <span>Wildcards (<code>%</code> = beliebig, <code>_</code> = 1 Zeichen)</span></li>' +
+						'</ul>' +
+					'</div>' +
+					'<div class="comyli-filter-help-group">' +
+						'<div class="comyli-filter-help-subtitle">Zahlen &amp; Datum</div>' +
+						'<ul>' +
+							'<li><code>&gt;= 100</code> / <code>&lt; 50</code> <span>Vergleiche (<code>&gt;</code>, <code>&gt;=</code>, <code>&lt;</code>, <code>&lt;=</code>, <code>=</code>, <code>!=</code>)</span></li>' +
+							'<li><code>Von</code> / <code>Bis</code> <span>Zeitraum bei Datumsspalten</span></li>' +
+						'</ul>' +
+					'</div>' +
+					'<div class="comyli-filter-help-note">Mehrere Spaltenfilter werden mit <b>UND</b> kombiniert. Die <b>Volltextsuche</b> oben durchsucht alle Spalten gleichzeitig.</div>' +
+				'</div>';
+			document.body.appendChild(pop);
+		}
+
+		if (pop._triggerBtn && pop._triggerBtn !== btn) {
+			pop._triggerBtn.setAttribute('aria-expanded', 'false');
+		}
+		pop._triggerBtn = btn;
+		btn.setAttribute('aria-expanded', 'true');
+		pop.classList.add('is-open');
+
+		var rect = btn.getBoundingClientRect();
+		var vw = window.innerWidth || document.documentElement.clientWidth;
+		var vh = window.innerHeight || document.documentElement.clientHeight;
+		var popW = pop.offsetWidth || 340;
+		var popH = pop.offsetHeight || 260;
+
+		var left = Math.min(Math.max(8, rect.left), Math.max(8, vw - popW - 8));
+		var top = rect.bottom + 8;
+		if (top + popH > vh - 8 && rect.top - popH - 8 > 8) {
+			top = rect.top - popH - 8;
+		}
+		pop.style.left = Math.round(left) + 'px';
+		pop.style.top = Math.round(top) + 'px';
 	};
 
 	COMYLI.initTable = function (root) {
