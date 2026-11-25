@@ -158,7 +158,7 @@ class ConfigHandler {
 
     public function __construct(array $override = []) {
         $defaults = [
-            'version' => 30504,
+            'version' => 30600,
             'sqlLogDuration' => 60 * 60 * 24 * 7,
             'path' => [
                 'codejar' => 'assets/codejar.js',
@@ -475,11 +475,56 @@ class FilterHandler {
     public function __construct(ConfigHandler $config) {
         $this->config = $config;
     }
+
+    /**
+     * Builds parameterized WHERE fragments from server-signed config['where'] constraints.
+     *
+     * @param array<int, array<string, mixed>> $fields
+     * @return array{clauses: string[], params: string[]}
+     */
+    public static function buildForcedWhere(ConfigHandler $config, array $fields): array {
+        $forced = $config->get('where', []);
+        if (!is_array($forced) || empty($forced)) {
+            return ['clauses' => [], 'params' => []];
+        }
+
+        $valid = [];
+        foreach ($fields as $f) {
+            if (!empty($f['name'])) {
+                $valid[(string)$f['name']] = true;
+            }
+        }
+
+        $clauses = [];
+        $params = [];
+        foreach ($forced as $col => $val) {
+            if (!is_string($col) || !isset($valid[$col])) {
+                continue;
+            }
+            if ($val === null) {
+                $clauses[] = "`$col` IS NULL";
+            } else {
+                $clauses[] = "`$col` = ?";
+                $params[] = (string)$val;
+            }
+        }
+
+        return ['clauses' => $clauses, 'params' => $params];
+    }
     
     public function getWhereClause(array $fields): array {
         $where = [];
         $params = [];
         $types = "";
+
+        // Programmatic server-enforced scope constraints (e.g. ['person_id' => 123])
+        $forced = self::buildForcedWhere($this->config, $fields);
+        if (!empty($forced['clauses'])) {
+            $where = array_merge($where, $forced['clauses']);
+            $params = array_merge($params, $forced['params']);
+            $types .= str_repeat("s", count($forced['params']));
+        }
+
                 // Volltextsuche (Search row)
         $searchKey = Security::base64urlEncode('search');
         if (!empty($_GET[$searchKey])) {
@@ -1073,7 +1118,7 @@ class HtmlRenderer {
             $hasLC = false;
             foreach ($fields as $field) {
                 if (!empty($field['flag']['primary'])) $hasPK = true;
-                if ($field['name'] === 'lastChanged' || $field['name'] === 'lstChanged') $hasLC = true;
+                if (in_array($field['name'], ['lastChanged', 'lstChanged', 'letzte_aenderung'], true)) $hasLC = true;
             }
             if ($hasPK && $hasLC) {
                 $out .= " <div style='margin-left:auto; display:flex; align-items:center; gap:5px;'>";
@@ -1082,7 +1127,7 @@ class HtmlRenderer {
                 $out .= " </div>";
             } else {
                 $reason = !$hasLC
-                    ? "Live-Sync nicht verfügbar: Tabelle besitzt keine Spalte 'lastChanged' (oder 'lstChanged')."
+                    ? "Live-Sync nicht verfügbar: Tabelle besitzt keine Spalte 'lastChanged' (oder 'lstChanged' / 'letzte_aenderung')."
                     : "Live-Sync nicht verfügbar: Tabelle besitzt keinen Primärschlüssel (Primary Key).";
                 $out .= " <div style='margin-left:auto; display:flex; align-items:center; gap:5px;'>";
                 $out .= " <button type='button' class='comyli-btn-sync' disabled style='background-color:#94a3b8; color:#f1f5f9; cursor:not-allowed; opacity:0.6;' title='" . Security::escapeAttr($reason) . "'>&#128259; Live-Sync (Inaktiv)</button>";
@@ -1182,7 +1227,7 @@ class HtmlRenderer {
                     $hiddenInputs .= "<input type='hidden' name='" . Security::escapeAttr($field['name']) . "' value='" . Security::escapeAttr((string)$val) . "'>";
                 }
             }
-            if ($field['name'] === 'lastChanged' || $field['name'] === 'lstChanged') {
+            if (in_array($field['name'], ['lastChanged', 'lstChanged', 'letzte_aenderung'], true)) {
                 $hiddenInputs .= "<input type='hidden' name='" . Security::escapeAttr($field['name']) . "' value='" . Security::escapeAttr((string)$val) . "'>";
             }
         }
@@ -1213,7 +1258,7 @@ HTML;
             if (!$this->isColVisible($visTbl, $field['name'])) continue;
 
             $val = $row[$i] ?? '';
-            $readonly = !empty($this->config->getArray('readonly')[$field['name']]) || in_array($field['name'], ['lastChanged', 'lstChanged', 'lastChangedUser'], true);
+            $readonly = !empty($this->config->getArray('readonly')[$field['name']]) || in_array($field['name'], ['lastChanged', 'lstChanged', 'letzte_aenderung', 'lastChangedUser'], true);
             $valueH = isset($this->config->getArray('valueH')[$field['name']]);
             $isPrimary = !empty($field['flag']['primary']);
             $isAuto = !empty($field['flag']['autoincr']);
@@ -1268,7 +1313,7 @@ HTML;
             $visTbl = $activeTable !== '' ? $activeTable : (string)($field['table'] ?? '');
             if (!$this->isColVisible($visTbl, $field['name'])) continue;
 
-            $readonly = !empty($this->config->getArray('readonly')[$field['name']]) || in_array($field['name'], ['lastChanged', 'lstChanged', 'lastChangedUser'], true);
+            $readonly = !empty($this->config->getArray('readonly')[$field['name']]) || in_array($field['name'], ['lastChanged', 'lstChanged', 'letzte_aenderung', 'lastChangedUser'], true);
             $valueH = isset($this->config->getArray('valueH')[$field['name']]);
             $isAuto = !empty($field['flag']['autoincr']);
 
@@ -1355,20 +1400,24 @@ class ActionHandler {
             }
         }
 
+        $forced = FilterHandler::buildForcedWhere($this->config, $fields);
+
         // Optimistic locking check for updates
         if ($btnSubmit === '[S]') {
             $lastChangedCol = null;
             $oldLastChanged = null;
             foreach ($fields as $field) {
-                if ($field['name'] === 'lastChanged' || $field['name'] === 'lstChanged') {
+                if (in_array($field['name'], ['lastChanged', 'lstChanged', 'letzte_aenderung'], true)) {
                     $lastChangedCol = $field['name'];
                     $oldLastChanged = $postData[$field['name']] ?? null;
                     break;
                 }
             }
             if ($lastChangedCol && $oldLastChanged && !empty($primaryKeys)) {
-                $checkSql = "SELECT `$lastChangedCol` FROM `$table` WHERE " . implode(' AND ', $primaryKeys);
-                $res = $this->db->executePrepared($checkSql, $primaryParams);
+                $lockClauses = array_merge($primaryKeys, $forced['clauses']);
+                $lockParams = array_merge($primaryParams, $forced['params']);
+                $checkSql = "SELECT `$lastChangedCol` FROM `$table` WHERE " . implode(' AND ', $lockClauses);
+                $res = $this->db->executePrepared($checkSql, $lockParams);
                 if ($res && $res->num_rows > 0) {
                     $row = $res->fetch_assoc();
                     $dbLastChanged = $row[$lastChangedCol];
@@ -1420,7 +1469,7 @@ class ActionHandler {
             $name = $field['name'];
 
             // Auto-update tracking fields on save
-            if ($name === 'lstChanged' || $name === 'lastChanged') {
+            if (in_array($name, ['lstChanged', 'lastChanged', 'letzte_aenderung'], true)) {
                 $insertCols[] = "`$name`";
                 $insertPlaceholders[] = "CURRENT_TIMESTAMP";
                 $updateSets[] = "`$name` = CURRENT_TIMESTAMP";
@@ -1518,15 +1567,18 @@ class ActionHandler {
             if (empty($updateSets)) {
                 return 0; // Nothing to update
             }
-            $sql = "UPDATE `$table` SET " . implode(', ', $updateSets) . " WHERE " . implode(' AND ', $primaryKeys);
-            $fullParams = array_merge($params, $primaryParams);
+            $whereClauses = array_merge($primaryKeys, $forced['clauses']);
+            $sql = "UPDATE `$table` SET " . implode(', ', $updateSets) . " WHERE " . implode(' AND ', $whereClauses);
+            $fullParams = array_merge($params, $primaryParams, $forced['params']);
             return $this->db->executePrepared($sql, $fullParams);
         }
 
         if ($btnSubmit === '[X]') {
             if (empty($primaryKeys)) return false;
-            $sql = "DELETE FROM `$table` WHERE " . implode(' AND ', $primaryKeys);
-            return $this->db->executePrepared($sql, $primaryParams);
+            $whereClauses = array_merge($primaryKeys, $forced['clauses']);
+            $sql = "DELETE FROM `$table` WHERE " . implode(' AND ', $whereClauses);
+            $fullParams = array_merge($primaryParams, $forced['params']);
+            return $this->db->executePrepared($sql, $fullParams);
         }
 
         return false;
@@ -1588,16 +1640,25 @@ class App {
             if (!$isQuery && !empty($table)) {
                 $resMeta = $this->db->query("SELECT * FROM `$table` LIMIT 0");
                 $lcCol = null;
+                $metaFields = [];
                 if ($resMeta) {
                     foreach ($resMeta->fetch_fields() as $val) {
-                        if ($val->name === 'lastChanged' || $val->name === 'lstChanged') {
+                        $metaFields[] = ['name' => $val->name];
+                        if ($lcCol === null && in_array($val->name, ['lastChanged', 'lstChanged', 'letzte_aenderung'], true)) {
                             $lcCol = $val->name;
-                            break;
                         }
                     }
                 }
                 if ($lcCol) {
-                    $resMax = $this->db->query("SELECT MAX(`$lcCol`) FROM `$table`");
+                    $forced = FilterHandler::buildForcedWhere($this->config, $metaFields);
+                    if (!empty($forced['clauses'])) {
+                        $resMax = $this->db->executePrepared(
+                            "SELECT MAX(`$lcCol`) FROM `$table` WHERE " . implode(' AND ', $forced['clauses']),
+                            $forced['params']
+                        );
+                    } else {
+                        $resMax = $this->db->query("SELECT MAX(`$lcCol`) FROM `$table`");
+                    }
                     if ($resMax && $resMax->num_rows > 0) {
                         $maxTs = $resMax->fetch_row()[0];
                         echo preg_replace('/\.\d+$/', '', (string)$maxTs);
@@ -1633,7 +1694,7 @@ class App {
                     $pkVals = [];
                     $primaryEdit = !empty($this->config->get('primaryEdit'));
                     foreach ($fields as $field) {
-                        if ($field['name'] === 'lastChanged' || $field['name'] === 'lstChanged') {
+                        if (in_array($field['name'], ['lastChanged', 'lstChanged', 'letzte_aenderung'], true)) {
                             $lcCol = $field['name'];
                         }
                         if (!empty($field['flag']['primary'])) {
@@ -1914,7 +1975,7 @@ class App {
         $lcIndex = -1;
         foreach ($fields as $idx => $field) {
             if (!empty($field['flag']['primary'])) $pkIndex = $idx;
-            if ($field['name'] === 'lastChanged' || $field['name'] === 'lstChanged') $lcIndex = $idx;
+            if (in_array($field['name'], ['lastChanged', 'lstChanged', 'letzte_aenderung'], true)) $lcIndex = $idx;
         }
 
         if ($pkIndex === -1 || $lcIndex === -1) {

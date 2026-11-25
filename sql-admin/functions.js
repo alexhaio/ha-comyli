@@ -221,7 +221,7 @@ COMYLI.isReady = true;
 				var tsParts = response.split('|TS|');
 				toast(escapeHtml(tsParts[0]));
 				if (tsParts.length > 1 && tsParts[1]) {
-					var inputs = form.querySelectorAll('input[name="lastChanged"], input[name="lstChanged"]');
+					var inputs = form.querySelectorAll('input[name="lastChanged"], input[name="lstChanged"], input[name="letzte_aenderung"]');
 					inputs.forEach(function (inp) {
 						inp.value = tsParts[1].trim();
 					});
@@ -1515,10 +1515,10 @@ COMYLI.isReady = true;
 			var pk = null;
 			var lc = null;
 			row.querySelectorAll('input').forEach(function (inp) {
-				if (inp.name.startsWith('prim') && inp.name !== 'primlastChanged' && inp.name !== 'primlstChanged') {
+				if (inp.name.startsWith('prim') && inp.name !== 'primlastChanged' && inp.name !== 'primlstChanged' && inp.name !== 'primletzte_aenderung') {
 					pk = inp.value;
 				}
-				if (inp.name === 'lastChanged' || inp.name === 'lstChanged') {
+				if (inp.name === 'lastChanged' || inp.name === 'lstChanged' || inp.name === 'letzte_aenderung') {
 					lc = inp.value;
 				}
 			});
@@ -1574,7 +1574,7 @@ COMYLI.isReady = true;
 			container.querySelectorAll('.formEdit').forEach(function (row) {
 				var pk = null;
 				row.querySelectorAll('input[type="hidden"]').forEach(function (inp) {
-					if (inp.name.startsWith('prim') && inp.name !== 'primlastChanged' && inp.name !== 'primlstChanged') {
+					if (inp.name.startsWith('prim') && inp.name !== 'primlastChanged' && inp.name !== 'primlstChanged' && inp.name !== 'primletzte_aenderung') {
 						pk = inp.value;
 					}
 				});
@@ -1591,7 +1591,7 @@ COMYLI.isReady = true;
 				formEditRows.forEach(function (row) {
 					var pk = null;
 					row.querySelectorAll('input[type="hidden"]').forEach(function (inp) {
-						if (inp.name.startsWith('prim') && inp.name !== 'primlastChanged' && inp.name !== 'primlstChanged') {
+						if (inp.name.startsWith('prim') && inp.name !== 'primlastChanged' && inp.name !== 'primlstChanged' && inp.name !== 'primletzte_aenderung') {
 							pk = inp.value;
 						}
 					});
@@ -1604,7 +1604,7 @@ COMYLI.isReady = true;
 					if (existingRow.isSaving || existingRow.needsSave) return;
 
 					var lc = null;
-					existingRow.querySelectorAll('input[name="lastChanged"], input[name="lstChanged"]').forEach(function (inp) {
+					existingRow.querySelectorAll('input[name="lastChanged"], input[name="lstChanged"], input[name="letzte_aenderung"]').forEach(function (inp) {
 						lc = inp.value;
 					});
 					if (lc && upsertRow.ts && upsertRow.ts <= lc) return;

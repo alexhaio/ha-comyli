@@ -192,6 +192,16 @@ if (function_exists('comyli_render')) {
         'csvExport' => true,
         'edit'      => false,
     ]);
+
+    // Eingebettete CRUD-Tabelle mit signiertem serverseitigen 'where'-Filter:
+    echo comyli_render([
+        'table'     => 'wp_mig_kontaktmanagement',
+        'where'     => ['person_id' => 123],
+        'layout'    => 'clean',
+        'edit'      => current_user_can('mig_edit_persons'),
+        'limit'     => 20,
+        'csvExport' => false,
+    ]);
 }
 ```
 
@@ -277,7 +287,7 @@ CoMyLi stellt unter dem Namespace `comyli/v1` REST-API-Endpunkte bereit. Authent
 ### 10.2 Tabellen-CRUD (Lokal & Externe DB)
 * **Route:** `/wp-json/comyli/v1/table/{name}` (`{name}` kann ein Tabellenname oder der Slug eines `comyli`-Tabellen-Posts sein)
 * **Methoden:**
-  * `GET /wp-json/comyli/v1/table/{name}?page=1&limit=25` – Liest Zeilen und Spalten-Metadaten (`Permissions::can_view_table`).
+  * `GET /wp-json/comyli/v1/table/{name}?page=1&limit=25` – Liest Zeilen und Spalten-Metadaten (`Permissions::can_view_table`). Zusätzliche Query-Parameter, die gültigen und sichtbaren Tabellenspalten entsprechen (z. B. `?person_id=123`), filtern die Ergebnismenge serverseitig per Prepared Statement (`=`).
   * `POST /wp-json/comyli/v1/table/{name}` – Fügt einen neuen Datensatz per JSON-Body ein (`Permissions::can_edit_table`).
   * `PUT /wp-json/comyli/v1/table/{name}?id=123` – Aktualisiert den Datensatz anhand des Primärschlüssels (`Permissions::can_edit_table`).
   * `DELETE /wp-json/comyli/v1/table/{name}?id=123` – Löscht den Datensatz anhand des Primärschlüssels (`Permissions::can_edit_table`).
@@ -293,7 +303,7 @@ CoMyLi stellt unter dem Namespace `comyli/v1` REST-API-Endpunkte bereit. Authent
 
 * **Custom CSS & Custom JS:** Sowohl in jeder Tabellendefinition (`comyli`) als auch in jeder Abfrage (`comyli_query`) können im Backend eigenes CSS und JavaScript mit Syntax-Highlighting hinterlegt werden. Beim Rendern der Tabelle/Abfrage im Frontend werden diese automatisch injiziert. Bei Abfragen werden CSS- und JS-Änderungen zudem in den WordPress-Revisionen versioniert.
 * **Spaltenbeschreibungen (Tooltips):** Kommentare (`COMMENT`), die im MySQL-Spaltenschema hinterlegt sind, werden automatisch als Info-Badge (`ⓘ`) mit Tooltip in den Spaltenköpfen dargestellt.
-* **LiveSync:** Besitzt eine editierbare Tabelle einen Primärschlüssel sowie eine Spalte `lastChanged` oder `lstChanged` (`TIMESTAMP` / `DATETIME`), aktiviert CoMyLi automatisch die LiveSync-Steuerung (`Auto` / `An` / `Aus`), hebt fremde Änderungen grün hervor und warnt bei gleichzeitiger Bearbeitung derselben Zeile (Optimistic Locking).
+* **LiveSync:** Besitzt eine editierbare Tabelle einen Primärschlüssel sowie eine Spalte `lastChanged`, `lstChanged` oder `letzte_aenderung` (`TIMESTAMP` / `DATETIME`), aktiviert CoMyLi automatisch die LiveSync-Steuerung (`Auto` / `An` / `Aus`), hebt fremde Änderungen grün hervor und warnt bei gleichzeitiger Bearbeitung derselben Zeile (Optimistic Locking).
 
 ---
 

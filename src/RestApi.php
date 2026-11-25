@@ -221,6 +221,18 @@ class RestApi {
             $config['edit'] = 0;
         }
 
+        $config['where'] = Shortcode::normalizeWhere($config['where'] ?? []);
+        if (!empty($config['where'])) {
+            if (!isset($config['valueH']) || !is_array($config['valueH'])) {
+                $config['valueH'] = [];
+            }
+            foreach ($config['where'] as $wCol => $wVal) {
+                if ($wVal !== null && !array_key_exists($wCol, $config['valueH'])) {
+                    $config['valueH'][$wCol] = (string)$wVal;
+                }
+            }
+        }
+
         return $config;
     }
 
@@ -650,10 +662,32 @@ class RestApi {
                 ? implode(', ', array_map(static fn($c) => "`$c`", array_keys($visibleCols)))
                 : '*';
 
-            $countRes = $db->query("SELECT COUNT(*) FROM `$table`");
+            $reservedKeys = ['page', 'limit', 'id', 'name', 'rest_route', '_wpnonce', '_locale', 'order', 'dir', 'comyli_ctx', 'comyli_id'];
+            $whereClauses = [];
+            $whereParams = [];
+            foreach ($request->get_query_params() as $qKey => $qVal) {
+                if (!is_string($qKey) || in_array($qKey, $reservedKeys, true)) {
+                    continue;
+                }
+                if (!isset($validCols[$qKey]) || !isset($visibleCols[$qKey])) {
+                    continue;
+                }
+                if (is_scalar($qVal) && (string)$qVal !== '') {
+                    $whereClauses[] = "`$qKey` = ?";
+                    $whereParams[] = (string)$qVal;
+                }
+            }
+            $whereSql = !empty($whereClauses) ? (' WHERE ' . implode(' AND ', $whereClauses)) : '';
+
+            $countRes = !empty($whereParams)
+                ? $db->executePrepared("SELECT COUNT(*) FROM `$table`" . $whereSql, $whereParams)
+                : $db->query("SELECT COUNT(*) FROM `$table`");
             $totalRows = ($countRes instanceof \mysqli_result && ($r = $countRes->fetch_row())) ? (int)$r[0] : 0;
 
-            $dataRes = $db->query("SELECT $selectList FROM `$table` LIMIT $limit OFFSET $offset");
+            $dataSql = "SELECT $selectList FROM `$table`" . $whereSql . " LIMIT $limit OFFSET $offset";
+            $dataRes = !empty($whereParams)
+                ? $db->executePrepared($dataSql, $whereParams)
+                : $db->query($dataSql);
             $rows = [];
             if ($dataRes instanceof \mysqli_result) {
                 while ($row = $dataRes->fetch_assoc()) {
@@ -691,7 +725,7 @@ class RestApi {
                 if (!isset($validCols[$k]) || !isset($visibleCols[$k])) {
                     continue;
                 }
-                if (!empty($readonlyCols[$k]) || isset($forcedValues[$k]) || in_array($k, ['lastChanged', 'lstChanged', 'lastChangedUser'], true)) {
+                if (!empty($readonlyCols[$k]) || isset($forcedValues[$k]) || in_array($k, ['lastChanged', 'lstChanged', 'letzte_aenderung', 'lastChangedUser'], true)) {
                     continue;
                 }
                 $writeData[$k] = $v;
@@ -731,7 +765,7 @@ class RestApi {
                 }
             }
 
-            foreach (['lastChanged', 'lstChanged'] as $lcName) {
+            foreach (['lastChanged', 'lstChanged', 'letzte_aenderung'] as $lcName) {
                 if (isset($validCols[$lcName])) {
                     $cols[] = "`$lcName`";
                     $placeholders[] = 'CURRENT_TIMESTAMP';
@@ -779,7 +813,7 @@ class RestApi {
                 if (!isset($validCols[$k]) || !isset($visibleCols[$k])) {
                     continue;
                 }
-                if (!empty($readonlyCols[$k]) || isset($forcedValues[$k]) || in_array($k, ['lastChanged', 'lstChanged', 'lastChangedUser'], true)) {
+                if (!empty($readonlyCols[$k]) || isset($forcedValues[$k]) || in_array($k, ['lastChanged', 'lstChanged', 'letzte_aenderung', 'lastChangedUser'], true)) {
                     continue;
                 }
                 $writeData[$k] = $v;
@@ -801,7 +835,7 @@ class RestApi {
                 }
             }
 
-            foreach (['lastChanged', 'lstChanged'] as $lcName) {
+            foreach (['lastChanged', 'lstChanged', 'letzte_aenderung'] as $lcName) {
                 if (isset($validCols[$lcName]) && !empty($sets)) {
                     $sets[] = "`$lcName` = CURRENT_TIMESTAMP";
                 }

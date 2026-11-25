@@ -3,7 +3,7 @@ Contributors: alexhaio, ha
 Tags: mysql, admin, table, reporting, crud, rest-api, gutenberg, chart, cron, export
 Requires at least: 6.0
 Tested up to: 6.7
-Stable tag: 3.5.4
+Stable tag: 3.6.0
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -88,6 +88,11 @@ Note: Placeholders are automatically escaped and quoted as SQL literals where ap
 4. Add tables or queries via Gutenberg blocks, shortcode `[comyli_table query="MyQuery" layout="clean"]`, or in PHP via `echo comyli_render(['query' => 'MyQuery']);`.
 
 == Changelog ==
+
+= 3.6.0 =
+* Added: Server-enforced HMAC-signed `where` filter support in `comyli_render()`, `Shortcode::renderDirect()`, `FilterHandler`, `ActionHandler` (scoped INSERT/UPDATE/DELETE and automatic `valueH` prefill), `RestApi` (`save`, `syncState`, `heartbeat`), and CSV export.
+* Added: Prepared column equality filtering on headless `GET /wp-json/comyli/v1/table/{name}` for visible schema columns (e.g. `?person_id=123`).
+* Added: Support for `letzte_aenderung` alongside `lastChanged` / `lstChanged` for LiveSync and optimistic locking.
 
 = 3.5.4 =
 * Improved: Added per-user, per-table/query visual column visibility toggle (`👁 Spalten` popover) stored in `wp_usermeta` (`_comyli_hidden_cols`) via `POST /wp-json/comyli/v1/user-columns` (with `localStorage` fallback for guests) without removing hidden/required/automatic form inputs from the DOM.

@@ -41,7 +41,7 @@ class Shortcode {
      */
     public static function signContext(array $ctx): string {
         $allowedKeys = [
-            'comyli_id', 'table', 'tables', 'query', 'qry', 'params',
+            'comyli_id', 'table', 'tables', 'query', 'qry', 'params', 'where',
             'layout', 'limit', 'edit', 'primaryEdit', 'filter',
             'csvExport', 'listQueries', 'listTables', 'stdTbl', 'stdQry',
         ];
@@ -85,6 +85,52 @@ class Shortcode {
         }
         $decoded = json_decode($json, true);
         return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
+     * Normalizes a programmatic or query-string/JSON 'where' constraint map safely.
+     *
+     * @return array<string, string|int|float|null>
+     */
+    public static function normalizeWhere(mixed $rawWhere): array {
+        if (is_string($rawWhere)) {
+            $trimmed = trim($rawWhere);
+            if ($trimmed === '') {
+                return [];
+            }
+            if (str_starts_with($trimmed, '{')) {
+                $decoded = json_decode($trimmed, true);
+                $rawWhere = is_array($decoded) ? $decoded : [];
+            } else {
+                $parsed = [];
+                parse_str($trimmed, $parsed);
+                $rawWhere = is_array($parsed) ? $parsed : [];
+            }
+        }
+        if (!is_array($rawWhere)) {
+            return [];
+        }
+
+        $clean = [];
+        foreach ($rawWhere as $col => $val) {
+            if (!is_string($col)) {
+                continue;
+            }
+            $colClean = (string)preg_replace('/[^a-zA-Z0-9_]/', '', $col);
+            if ($colClean === '' || $colClean !== $col) {
+                continue;
+            }
+            if ($val === null) {
+                $clean[$colClean] = null;
+            } elseif (is_bool($val)) {
+                $clean[$colClean] = $val ? 1 : 0;
+            } elseif (is_int($val) || is_float($val)) {
+                $clean[$colClean] = $val;
+            } elseif (is_string($val)) {
+                $clean[$colClean] = $val;
+            }
+        }
+        return $clean;
     }
 
     private static function normalizeBool(mixed $value): bool {
@@ -255,6 +301,7 @@ class Shortcode {
         $defaults = [
             'table'     => '',
             'query'     => '',
+            'where'     => [],
             'params'    => [],
             'layout'    => 'clean',
             'limit'     => 25,
@@ -386,6 +433,19 @@ class Shortcode {
             $config['edit'] = 0;
         }
 
+        // Normalize forced 'where' scope and mirror fixed non-null columns into valueH for scoped inserts
+        $config['where'] = self::normalizeWhere($config['where'] ?? []);
+        if (!empty($config['where'])) {
+            if (!isset($config['valueH']) || !is_array($config['valueH'])) {
+                $config['valueH'] = [];
+            }
+            foreach ($config['where'] as $wCol => $wVal) {
+                if ($wVal !== null && !array_key_exists($wCol, $config['valueH'])) {
+                    $config['valueH'][$wCol] = (string)$wVal;
+                }
+            }
+        }
+
         // Sign safe context token (never exposes dbpass or server paths)
         $signedCtx = self::signContext([
             'comyli_id'   => $postId,
@@ -394,6 +454,7 @@ class Shortcode {
             'query'       => (string)($config['query'] ?? ''),
             'qry'         => (string)($config['qry'] ?? ''),
             'params'      => $config['params'] ?? [],
+            'where'       => $config['where'],
             'layout'      => (string)($config['layout'] ?? 'clean'),
             'limit'       => (int)($config['limit'] ?? 25),
             'edit'        => !empty($config['edit']) ? 1 : 0,
