@@ -193,8 +193,8 @@ class PostType {
                                 <td><strong><a href="<?php echo esc_url($editUrl); ?>" target="_blank"><?php echo esc_html($lq->post_title); ?></a></strong></td>
                                 <td><code><?php echo esc_html($slug); ?></code></td>
                                 <td>
-                                    <?php if (empty($cap) || $cap === 'read'): ?>
-                                        <span style="color:#059669;">Öffentlich (read)</span>
+                                    <?php if (empty($cap)): ?>
+                                        <span style="color:#059669;">✓ Öffentlich (für alle)</span>
                                     <?php else: ?>
                                         <span style="background:#fef3c7; color:#92400e; padding:2px 6px; border-radius:3px; font-family:monospace;">🔒 <?php echo esc_html($cap); ?></span>
                                     <?php endif; ?>

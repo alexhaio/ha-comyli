@@ -3,7 +3,7 @@ Contributors: alexhaio, ha
 Tags: mysql, admin, table, reporting, crud, rest-api, gutenberg, chart, cron, export
 Requires at least: 6.0
 Tested up to: 6.7
-Stable tag: 3.6.0
+Stable tag: 3.6.1
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -88,6 +88,10 @@ Note: Placeholders are automatically escaped and quoted as SQL literals where ap
 4. Add tables or queries via Gutenberg blocks, shortcode `[comyli_table query="MyQuery" layout="clean"]`, or in PHP via `echo comyli_render(['query' => 'MyQuery']);`.
 
 == Changelog ==
+
+= 3.6.1 =
+* Fixed: Leaving the query capability field (`_comyli_capability`) empty in `QueryManager` now reliably clears the meta value on save (including Select2 clear) and allows unrestricted access to the query for all users (including guests), even when the query is linked to a `comyli` table (`_comyli_table_id`).
+* Improved: Clarified capability UI labels (`— Keine Capability (Jeder darf zugreifen) —` / `✓ Öffentlich (für alle)`) in `QueryManager` and `PostType`, distinguishing unrestricted empty capabilities from `read`.
 
 = 3.6.0 =
 * Added: Server-enforced HMAC-signed `where` filter support in `comyli_render()`, `Shortcode::renderDirect()`, `FilterHandler`, `ActionHandler` (scoped INSERT/UPDATE/DELETE and automatic `valueH` prefill), `RestApi` (`save`, `syncState`, `heartbeat`), and CSV export.

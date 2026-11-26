@@ -371,7 +371,7 @@ class Shortcode {
         if (!empty($config['table']) && !in_array((string)$config['table'], $tablesToCheck, true)) {
             $tablesToCheck[] = (string)$config['table'];
         }
-        if (class_exists(Permissions::class)) {
+        if ($queryToCheck === '' && class_exists(Permissions::class)) {
             foreach ($tablesToCheck as $tblCheck) {
                 if ($tblCheck !== '' && !Permissions::can_view_table($tblCheck)) {
                     return '<div class="comyli-error">Keine Berechtigung zum Anzeigen dieser Tabelle.</div>';

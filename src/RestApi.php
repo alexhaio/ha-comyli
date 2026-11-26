@@ -190,7 +190,7 @@ class RestApi {
             return [];
         }
 
-        if (class_exists(Permissions::class)) {
+        if ($queryToCheck === '' && class_exists(Permissions::class)) {
             foreach ($tablesArr as $tblCheck) {
                 if ($tblCheck !== '' && !Permissions::can_view_table($tblCheck)) {
                     return [];

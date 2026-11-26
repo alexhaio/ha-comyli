@@ -233,7 +233,7 @@ class QueryManager {
                     <th scope="row"><label for="comyli_capability">Erforderliche Berechtigung (Capability)</label></th>
                     <td>
                         <select id="comyli_capability" name="comyli_capability" class="comyli-cap-select2" style="width:100%; min-width:320px;">
-                            <option value="">-- Keine spezielle Capability (Öffentlich für alle / read) --</option>
+                            <option value="" <?php selected((string)$currentCap, ''); ?>>— Keine Capability (Jeder darf zugreifen) —</option>
                             <?php if (!empty($currentCap) && !in_array($currentCap, $systemCaps, true)): ?>
                                 <option value="<?php echo esc_attr($currentCap); ?>" selected><?php echo esc_html($currentCap); ?> (Benutzerdefiniert)</option>
                             <?php endif; ?>
@@ -244,7 +244,7 @@ class QueryManager {
                             <?php endforeach; ?>
                         </select>
                         <p class="description">
-                            Wählen Sie eine im System vorhandene WordPress-Capability aus oder tippen Sie eine eigene ein. Benutzer ohne diese Berechtigung können die Abfrage weder ausführen noch einsehen.
+                            Wählen Sie eine im System vorhandene WordPress-Capability aus oder tippen Sie eine eigene ein. Bleibt das Feld leer, kann jeder (auch ohne spezielle Berechtigung oder Anmeldung) auf diese Abfrage zugreifen.
                         </p>
                     </td>
                 </tr>
@@ -263,10 +263,15 @@ class QueryManager {
         jQuery(document).ready(function($) {
             if (typeof $.fn.select2 !== 'undefined') {
                 $('#comyli_capability').select2({
-                    placeholder: 'Capability suchen oder eingeben...',
+                    placeholder: {
+                        id: '',
+                        text: '— Keine Capability (Jeder darf zugreifen) —'
+                    },
                     allowClear: true,
                     tags: true,
                     width: 'resolve'
+                }).on('select2:clear', function() {
+                    $(this).val('').trigger('change');
                 });
             }
         });
@@ -567,8 +572,8 @@ class QueryManager {
                 break;
             case 'capability':
                 $cap = get_post_meta($post_id, self::META_CAPABILITY, true);
-                if (empty($cap) || $cap === 'read') {
-                    echo '<span style="color:#059669; font-weight:600;">✓ Öffentlich (read)</span>';
+                if (empty($cap)) {
+                    echo '<span style="color:#059669; font-weight:600;">✓ Öffentlich (für alle)</span>';
                 } elseif ($cap === 'manage_options') {
                     echo '<span style="color:#dc2626; font-weight:600;">🔒 Admin (manage_options)</span>';
                 } else {
@@ -626,8 +631,10 @@ class QueryManager {
         }
 
         // Meta fields
-        if (isset($_POST['comyli_capability'])) {
-            $cap = sanitize_text_field($_POST['comyli_capability']);
+        $cap = isset($_POST['comyli_capability']) ? trim(sanitize_text_field(wp_unslash((string)$_POST['comyli_capability']))) : '';
+        if ($cap === '') {
+            delete_post_meta($post_id, self::META_CAPABILITY);
+        } else {
             update_post_meta($post_id, self::META_CAPABILITY, $cap);
         }
         if (isset($_POST['comyli_description'])) {
