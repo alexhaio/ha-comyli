@@ -1,0 +1,9 @@
+.git
+.gitignore
+.github
+.distignore
+.vscode
+.idea
+node_modules
+tests
+*.log

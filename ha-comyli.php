@@ -10,16 +10,51 @@
  * 
  * @wordpress-plugin
  * Plugin Name:		CoMyLi - Configurable-MySQL-Light-Interface
+ * Plugin URI:		https://github.com/alexhaio/ha-comyli
  * Description:		Implements an easy-to-use interface for MySQL-Databases
- * Version:			3.6.2
+ * Version:			3.6.3
  * Author:			Alexander Hacker
  * Author URI:		https://edv-hacker.de
+ * Requires at least:	6.6
+ * Requires PHP:		8.0
  * Text Domain:		ha-comyli
+ * Domain Path:		/languages
  * License:			GPL-3.0
  * License URI:		https://www.gnu.org/licenses/gpl-3.0.txt
  */
 
 defined('ABSPATH') or die('Nope.');
+
+if (!defined('HA_COMYLI_VERSION')) {
+    define('HA_COMYLI_VERSION', '3.6.3');
+}
+
+// Point WordPress 6.6+ JIT translation loader to bundled /languages/ directory.
+add_filter('lang_dir_for_domain', function ($path, $domain) {
+    if ('ha-comyli' === $domain) {
+        return plugin_dir_path(__FILE__) . 'languages/';
+    }
+    return $path;
+}, 10, 2);
+
+// Direct admin links on Plugins overview page.
+add_filter('plugin_action_links_' . plugin_basename(__FILE__), function (array $links): array {
+    if (!current_user_can('edit_posts')) {
+        return $links;
+    }
+    $tablesLink = sprintf(
+        '<a href="%s">%s</a>',
+        esc_url(admin_url('edit.php?post_type=comyli')),
+        esc_html__('Tabellen', 'ha-comyli')
+    );
+    $queriesLink = sprintf(
+        '<a href="%s">%s</a>',
+        esc_url(admin_url('edit.php?post_type=comyli_query')),
+        esc_html__('Abfragen', 'ha-comyli')
+    );
+    array_unshift($links, $tablesLink, $queriesLink);
+    return $links;
+});
 
 /**
  * Initialize Plugin Update Checker for automatic updates from GitHub repository.

@@ -109,11 +109,13 @@ class Blocks {
     public function enqueueBlockEditorAssets(): void {
         $url = $this->config->plugin['url'];
 
+        $ver = defined('HA_COMYLI_VERSION') ? HA_COMYLI_VERSION : '3.6.3';
+
         wp_register_script(
             'ha-comyli-blocks-js',
             $url . 'js/blocks.js',
             ['wp-blocks', 'wp-element', 'wp-components', 'wp-block-editor'],
-            '3.6.2',
+            $ver,
             ['in_footer' => true]
         );
 
@@ -121,7 +123,7 @@ class Blocks {
             'ha-comyli-blocks-css',
             $url . 'css/blocks.css',
             [],
-            '3.6.2'
+            $ver
         );
 
         // Discover CPT-defined queries (from QueryManager)

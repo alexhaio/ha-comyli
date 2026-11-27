@@ -158,7 +158,7 @@ class ConfigHandler {
 
     public function __construct(array $override = []) {
         $defaults = [
-            'version' => 30602,
+            'version' => 30603,
             'sqlLogDuration' => 60 * 60 * 24 * 7,
             'path' => [
                 'codejar' => 'assets/codejar.js',

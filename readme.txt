@@ -1,9 +1,10 @@
 === CoMyLi - Configurable-MySQL-Light-Interface ===
 Contributors: alexhaio, ha
 Tags: mysql, admin, table, crud, gutenberg
-Requires at least: 6.0
+Requires at least: 6.6
+Requires PHP: 8.0
 Tested up to: 7.1
-Stable tag: 3.6.2
+Stable tag: 3.6.3
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -88,6 +89,9 @@ Note: Placeholders are automatically escaped and quoted as SQL literals where ap
 4. Add tables or queries via Gutenberg blocks, shortcode `[comyli_table query="MyQuery" layout="clean"]`, or in PHP via `echo comyli_render(['query' => 'MyQuery']);`.
 
 == Changelog ==
+
+= 3.6.3 =
+* Improved: Applied `ha-wordpress-plugin-development` standards: added GDPR-compliant `uninstall.php` teardown, `.distignore`, `/languages/ha-comyli.pot` with `lang_dir_for_domain` filter, `HA_COMYLI_VERSION` constant, `Plugin URI`/`Requires at least`/`Requires PHP`/`Domain Path` headers, and direct plugin overview action links (`Tabellen`, `Abfragen`).
 
 = 3.6.2 =
 * Improved: Resolved WordPress Plugin Check (PCP) best-practice issues across plugin metadata, late escaping (`esc_html`, `esc_attr`, `wp_add_inline_style`/`wp_add_inline_script`), proper `wp_unslash()` + input sanitization, script/style versioning and footer loading, `wp_delete_file()`, `wp_strip_all_tags()`, and moved CodeJar/Prism frontend assets into `Assets.php`.

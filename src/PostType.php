@@ -36,7 +36,7 @@ class PostType {
         global $post_type;
         if ($post_type === $this->config->plugin['type']) {
             $url = plugin_dir_url(__DIR__);
-            $ver = '3.6.2';
+            $ver = defined('HA_COMYLI_VERSION') ? HA_COMYLI_VERSION : '3.6.3';
             wp_enqueue_style('prism-css', $url . 'sql-admin/assets/prism.min.css', [], $ver);
             wp_enqueue_script('codejar-js', $url . 'sql-admin/assets/codejar.js', [], $ver, true);
             wp_enqueue_script('prism-js', $url . 'sql-admin/assets/prism.min.js', [], $ver, true);

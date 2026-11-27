@@ -1,0 +1,12 @@
+# Copyright (C) 2026 Alexander Hacker
+# This file is distributed under the GPL-3.0.
+msgid ""
+msgstr ""
+"Project-Id-Version: CoMyLi - Configurable-MySQL-Light-Interface 3.6.3\n"
+"Report-Msgid-Bugs-To: https://github.com/alexhaio/ha-comyli/issues\n"
+"POT-Creation-Date: 2026-11-27 11:51+0100\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language-Team: German <info@edv-hacker.de>\n"
+"X-Domain: ha-comyli\n"
