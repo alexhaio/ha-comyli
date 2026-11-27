@@ -158,7 +158,7 @@ class ConfigHandler {
 
     public function __construct(array $override = []) {
         $defaults = [
-            'version' => 30601,
+            'version' => 30602,
             'sqlLogDuration' => 60 * 60 * 24 * 7,
             'path' => [
                 'codejar' => 'assets/codejar.js',
@@ -1235,21 +1235,17 @@ class HtmlRenderer {
         // 2. Render Row Wrapper
         if ($editMode) {
             $csrf = Security::escapeAttr(Security::generateCsrfToken());
-            $out .= <<<HTML
-<form class='tr formEdit' method='POST' enctype='multipart/form-data'>
-    <div class='td' data-col='_actions' style='white-space:nowrap;'>
-        {$hiddenInputs}
-        <input type='checkbox' class='comyli-bulk-check' style='margin-right:8px;'>
-        <input type='hidden' name='csrf_token' value='{$csrf}'>
-        <button class='btnSave' type='submit' name='TA_btnSubmit' value='[S]'>&#10004;</button> 
-        <button class='btnDel' type='submit' name='TA_btnSubmit' value='[X]'>&#10008;</button>
-    </div>
-HTML;
+            $out .= "<form class='tr formEdit' method='POST' enctype='multipart/form-data'>"
+                . "<div class='td' data-col='_actions' style='white-space:nowrap;'>"
+                . $hiddenInputs
+                . "<input type='checkbox' class='comyli-bulk-check' style='margin-right:8px;'>"
+                . "<input type='hidden' name='csrf_token' value='{$csrf}'>"
+                . "<button class='btnSave' type='submit' name='TA_btnSubmit' value='[S]'>&#10004;</button> "
+                . "<button class='btnDel' type='submit' name='TA_btnSubmit' value='[X]'>&#10008;</button>"
+                . "</div>";
         } else {
-            $out .= <<<HTML
-<div class='tr formView'>
-    <div class='td' data-col='_actions'>{$hiddenInputs}</div>
-HTML;
+            $out .= "<div class='tr formView'>"
+                . "<div class='td' data-col='_actions'>" . $hiddenInputs . "</div>";
         }
 
         // 3. Render Columns
@@ -1672,7 +1668,8 @@ class App {
         }
 
         // Handle POST Actions
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($table) && !$isQuery && $this->config->get('edit')) {
+        $reqMethod = isset($_SERVER['REQUEST_METHOD']) ? strtoupper((string)$_SERVER['REQUEST_METHOD']) : '';
+        if ($reqMethod === 'POST' && !empty($table) && !$isQuery && $this->config->get('edit')) {
             $res = $this->db->query("SELECT * FROM `$table` LIMIT 0");
             $fields = [];
             if ($res) {
@@ -2028,7 +2025,8 @@ class App {
     private function renderUi(string $table): void {
         if ($this->config->get('noInterface')) return;
 
-        $isSyncState = (isset($_GET['action']) && $_GET['action'] === 'syncState' && $_SERVER['REQUEST_METHOD'] === 'POST');
+        $reqMethod = isset($_SERVER['REQUEST_METHOD']) ? strtoupper((string)$_SERVER['REQUEST_METHOD']) : '';
+        $isSyncState = (isset($_GET['action']) && $_GET['action'] === 'syncState' && $reqMethod === 'POST');
 
         if (!$isSyncState) {
             // Base scripts and styles (only for standalone mode; in WordPress they are enqueued via Assets.php)
@@ -2038,7 +2036,8 @@ class App {
                 }
                 if ($customCss = $this->config->get('custom_css')) {
                     $cleanCss = trim(preg_replace('/<\/?\s*style\b[^>]*>/i', '', (string)$customCss));
-                    echo "<style class='comyli-custom-css'>\n" . strip_tags($cleanCss) . "\n</style>";
+                    $strippedCss = function_exists('wp_strip_all_tags') ? wp_strip_all_tags($cleanCss) : (string)preg_replace('/<[^>]*>/', '', $cleanCss);
+                    echo "<style class='comyli-custom-css'>\n" . $strippedCss . "\n</style>";
                 }
                 if ($customJs = $this->config->get('custom_js')) {
                     $cleanJs = trim(preg_replace('/<\/?\s*script\b[^>]*>/i', '', (string)$customJs));
@@ -2050,18 +2049,18 @@ class App {
                 if ($js = $this->config->getArray('path')['js'] ?? '') {
                     echo "<script src='" . Security::escapeAttr($js) . "?v=" . filemtime(__DIR__ . '/functions.js') . "'></script>";
                 }
-            }
-            if ($prismcss = $this->config->getArray('path')['prismcss'] ?? '') {
-                echo "<link rel='stylesheet' href='" . Security::escapeAttr($prismcss) . "'>";
-            }
-            if ($codejar = $this->config->getArray('path')['codejar'] ?? '') {
-                echo "<script src='" . Security::escapeAttr($codejar) . "'></script>";
-            }
-            if ($prismjs = $this->config->getArray('path')['prismjs'] ?? '') {
-                echo "<script src='" . Security::escapeAttr($prismjs) . "'></script>";
-            }
-            if ($prismsql = $this->config->getArray('path')['prismsql'] ?? '') {
-                echo "<script src='" . Security::escapeAttr($prismsql) . "'></script>";
+                if ($prismcss = $this->config->getArray('path')['prismcss'] ?? '') {
+                    echo "<link rel='stylesheet' href='" . Security::escapeAttr($prismcss) . "'>";
+                }
+                if ($codejar = $this->config->getArray('path')['codejar'] ?? '') {
+                    echo "<script src='" . Security::escapeAttr($codejar) . "'></script>";
+                }
+                if ($prismjs = $this->config->getArray('path')['prismjs'] ?? '') {
+                    echo "<script src='" . Security::escapeAttr($prismjs) . "'></script>";
+                }
+                if ($prismsql = $this->config->getArray('path')['prismsql'] ?? '') {
+                    echo "<script src='" . Security::escapeAttr($prismsql) . "'></script>";
+                }
             }
 
             $configuredTables = $this->getConfiguredTables();

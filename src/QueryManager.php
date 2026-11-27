@@ -80,14 +80,15 @@ class QueryManager {
         global $post_type;
         if ($post_type === self::POST_TYPE) {
             $url = $this->config->plugin['url'];
-            wp_enqueue_style('prism-css', $url . 'sql-admin/assets/prism.min.css');
-            wp_enqueue_script('codejar-js', $url . 'sql-admin/assets/codejar.js', [], null, true);
-            wp_enqueue_script('prism-js', $url . 'sql-admin/assets/prism.min.js', [], null, true);
-            wp_enqueue_script('prism-sql-js', $url . 'sql-admin/assets/prism-sql.min.js', ['prism-js'], null, true);
+            $ver = '3.6.2';
+            wp_enqueue_style('prism-css', $url . 'sql-admin/assets/prism.min.css', [], $ver);
+            wp_enqueue_script('codejar-js', $url . 'sql-admin/assets/codejar.js', [], $ver, true);
+            wp_enqueue_script('prism-js', $url . 'sql-admin/assets/prism.min.js', [], $ver, true);
+            wp_enqueue_script('prism-sql-js', $url . 'sql-admin/assets/prism-sql.min.js', ['prism-js'], $ver, true);
 
             // Select2 for capability selection
-            wp_enqueue_style('select2', $url . 'select2/select2.min.css');
-            wp_enqueue_script('select2', $url . 'select2/select2.min.js', ['jquery'], null, true);
+            wp_enqueue_style('select2', $url . 'select2/select2.min.css', [], '4.0.13');
+            wp_enqueue_script('select2', $url . 'select2/select2.min.js', ['jquery'], '4.0.13', true);
         }
     }
 
@@ -288,8 +289,11 @@ class QueryManager {
             $archives = [];
         }
 
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only status notice after redirect
         if (isset($_GET['comyli_archived'])) {
-            $msg = isset($_GET['comyli_msg']) ? urldecode($_GET['comyli_msg']) : '';
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+            $msg = isset($_GET['comyli_msg']) ? sanitize_text_field(urldecode(wp_unslash((string)$_GET['comyli_msg']))) : '';
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended
             if ($_GET['comyli_archived'] === '1') {
                 echo '<div class="notice notice-success is-dismissible" style="margin:10px 0;"><p>' . esc_html($msg ?: 'Abfrage erfolgreich ausgeführt und archiviert.') . '</p></div>';
             } else {
@@ -354,7 +358,7 @@ class QueryManager {
             </tbody>
         </table>
 
-        <h4 style="margin:20px 0 10px 0; border-top:1px solid #ccd0d4; padding-top:15px;">Archivierte CSV-Dateien (<?php echo count($archives); ?>)</h4>
+        <h4 style="margin:20px 0 10px 0; border-top:1px solid #ccd0d4; padding-top:15px;">Archivierte CSV-Dateien (<?php echo absint(count($archives)); ?>)</h4>
         <?php if (empty($archives)): ?>
             <p style="color:#64748b; font-style:italic;">Noch keine Archive vorhanden. Aktivieren Sie ein Intervall oder führen Sie die Abfrage manuell aus.</p>
         <?php else: ?>
@@ -391,8 +395,8 @@ class QueryManager {
                         <tr>
                             <td><strong><?php echo esc_html(wp_date('d.m.Y H:i:s', (int)($arc['created_at'] ?? 0))); ?></strong></td>
                             <td><code><?php echo esc_html($arc['filename'] ?? ''); ?></code></td>
-                            <td><?php echo number_format_i18n((int)($arc['row_count'] ?? 0)); ?></td>
-                            <td><?php echo size_format((int)($arc['file_size'] ?? 0)); ?></td>
+                            <td><?php echo esc_html(number_format_i18n((int)($arc['row_count'] ?? 0))); ?></td>
+                            <td><?php echo esc_html((string)size_format((int)($arc['file_size'] ?? 0))); ?></td>
                             <td style="text-align:right;">
                                 <a href="<?php echo esc_url($downloadUrl); ?>" class="button button-small button-primary" style="margin-right:5px;">
                                     ⬇ CSV herunterladen
@@ -543,11 +547,10 @@ class QueryManager {
                 if ($tableId > 0) {
                     $tbl = get_post($tableId);
                     if ($tbl) {
-                        $tblName = esc_html($tbl->post_title);
                         $editUrl = get_edit_post_link($tableId);
-                        echo '<a href="' . esc_url($editUrl) . '"><strong>' . $tblName . '</strong></a>';
+                        echo '<a href="' . esc_url($editUrl) . '"><strong>' . esc_html($tbl->post_title) . '</strong></a>';
                     } else {
-                        echo '<span style="color:#64748b;">Tabelle #' . $tableId . '</span>';
+                        echo '<span style="color:#64748b;">Tabelle #' . absint($tableId) . '</span>';
                     }
                 } else {
                     echo '<span style="color:#0284c7;">WordPress-DB</span>';
@@ -594,7 +597,7 @@ class QueryManager {
                 $intLabel = $labels[$interval] ?? '—';
                 echo '<strong>' . esc_html($intLabel) . '</strong>';
                 if ($count > 0) {
-                    echo '<br><span style="color:#64748b; font-size:11px;">' . $count . ' Archive</span>';
+                    echo '<br><span style="color:#64748b; font-size:11px;">' . absint($count) . ' Archive</span>';
                 }
                 break;
             case 'shortcode':
@@ -608,7 +611,8 @@ class QueryManager {
         if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
             return;
         }
-        if (!isset($_POST['comyli_query_nonce']) || !wp_verify_nonce($_POST['comyli_query_nonce'], 'comyli_save_query_meta')) {
+        $queryNonce = isset($_POST['comyli_query_nonce']) ? sanitize_text_field(wp_unslash((string)$_POST['comyli_query_nonce'])) : '';
+        if ($queryNonce === '' || !wp_verify_nonce($queryNonce, 'comyli_save_query_meta')) {
             return;
         }
         if (!current_user_can('edit_post', $post_id)) {
@@ -617,7 +621,8 @@ class QueryManager {
 
         // Save SQL in post_content if not already persisted by filterPostData
         if (isset($_POST['comyli_sql_code'])) {
-            $sql = wp_unslash($_POST['comyli_sql_code']);
+            // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- raw SQL must preserve <, >, quotes
+            $sql = (string)wp_unslash($_POST['comyli_sql_code']);
             $currentPost = get_post($post_id);
             if ($currentPost && $currentPost->post_content !== $sql) {
                 global $wpdb;
@@ -638,10 +643,10 @@ class QueryManager {
             update_post_meta($post_id, self::META_CAPABILITY, $cap);
         }
         if (isset($_POST['comyli_description'])) {
-            update_post_meta($post_id, self::META_DESCRIPTION, sanitize_text_field($_POST['comyli_description']));
+            update_post_meta($post_id, self::META_DESCRIPTION, sanitize_text_field(wp_unslash((string)$_POST['comyli_description'])));
         }
         if (isset($_POST['comyli_category'])) {
-            update_post_meta($post_id, self::META_CATEGORY, sanitize_text_field($_POST['comyli_category']));
+            update_post_meta($post_id, self::META_CATEGORY, sanitize_text_field(wp_unslash((string)$_POST['comyli_category'])));
         }
 
         if (isset($_POST['comyli_query_custom_css'])) {

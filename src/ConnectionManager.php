@@ -164,7 +164,7 @@ class ConnectionManager {
                 }
                 $mysqli = @new \mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
                 if ($mysqli->connect_error) {
-                    throw new \Exception('Lokale WordPress-Datenbankverbindung fehlgeschlagen: ' . $mysqli->connect_error);
+                    throw new \Exception('Lokale WordPress-Datenbankverbindung fehlgeschlagen: ' . esc_html($mysqli->connect_error));
                 }
                 @$mysqli->query("SET character_set_results = 'utf8mb4', character_set_client = 'utf8mb4', character_set_connection = 'utf8mb4', character_set_database = 'utf8mb4', character_set_server = 'utf8mb4'");
                 self::$connectionCache[$connKey] = $mysqli;
@@ -194,7 +194,7 @@ class ConnectionManager {
 
         $mysqli = @new \mysqli($host, $dbuser, $dbpass, $db, $port);
         if ($mysqli->connect_error) {
-            throw new \Exception("Verbindung zur externen Datenbank ($host) fehlgeschlagen: " . $mysqli->connect_error);
+            throw new \Exception('Verbindung zur externen Datenbank (' . esc_html($host) . ') fehlgeschlagen: ' . esc_html($mysqli->connect_error));
         }
 
         @$mysqli->query("SET character_set_results = 'utf8mb4', character_set_client = 'utf8mb4', character_set_connection = 'utf8mb4', character_set_database = 'utf8mb4', character_set_server = 'utf8mb4'");

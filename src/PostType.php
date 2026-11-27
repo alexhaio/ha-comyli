@@ -36,10 +36,11 @@ class PostType {
         global $post_type;
         if ($post_type === $this->config->plugin['type']) {
             $url = plugin_dir_url(__DIR__);
-            wp_enqueue_style('prism-css', $url . 'sql-admin/assets/prism.min.css');
-            wp_enqueue_script('codejar-js', $url . 'sql-admin/assets/codejar.js', [], null, true);
-            wp_enqueue_script('prism-js', $url . 'sql-admin/assets/prism.min.js', [], null, true);
-            wp_enqueue_script('prism-sql-js', $url . 'sql-admin/assets/prism-sql.min.js', ['prism-js'], null, true);
+            $ver = '3.6.2';
+            wp_enqueue_style('prism-css', $url . 'sql-admin/assets/prism.min.css', [], $ver);
+            wp_enqueue_script('codejar-js', $url . 'sql-admin/assets/codejar.js', [], $ver, true);
+            wp_enqueue_script('prism-js', $url . 'sql-admin/assets/prism.min.js', [], $ver, true);
+            wp_enqueue_script('prism-sql-js', $url . 'sql-admin/assets/prism-sql.min.js', ['prism-js'], $ver, true);
         }
     }
 
@@ -266,22 +267,22 @@ class PostType {
     private function renderRow(string $key, string $label, string $type, array $data, string $desc = '', string $rowClass = ''): void {
         $val = $data[$key] ?? '';
         $name = 'comyli_' . $key;
-        echo "<tr class='$rowClass'><th scope='row'><label for='$name'>$label</label></th><td>";
+        echo "<tr class='" . esc_attr($rowClass) . "'><th scope='row'><label for='" . esc_attr($name) . "'>" . esc_html(html_entity_decode($label, ENT_QUOTES, 'UTF-8')) . "</label></th><td>";
         if ($type === 'checkbox') {
-            $checked = (!empty($val) && $val !== '0') ? 'checked' : '';
-            echo "<input type='checkbox' id='$name' name='$name' value='1' $checked>";
+            $checkedAttr = (!empty($val) && $val !== '0') ? ' checked' : '';
+            echo "<input type='checkbox' id='" . esc_attr($name) . "' name='" . esc_attr($name) . "' value='1'" . esc_attr($checkedAttr) . ">";
         } elseif ($type === 'password') {
             $hasExisting = ((string)$val !== '');
             $placeholder = $hasExisting ? '•••••••• (gespeichert – leer lassen um beizubehalten)' : '';
-            echo "<input type='password' id='$name' name='$name' value='' autocomplete='new-password' placeholder='" . esc_attr($placeholder) . "' class='regular-text'>";
+            echo "<input type='password' id='" . esc_attr($name) . "' name='" . esc_attr($name) . "' value='' autocomplete='new-password' placeholder='" . esc_attr($placeholder) . "' class='regular-text'>";
             if ($hasExisting) {
-                echo " <label style='margin-left:8px; font-size:12px;'><input type='checkbox' name='comyli_dbpass_clear' value='1'> Passwort löschen</label>";
+                echo " <label style='margin-left:8px; font-size:12px;'><input type='checkbox' name='comyli_dbpass_clear' value='1'> Passwort l&ouml;schen</label>";
             }
         } else {
-            echo "<input type='$type' id='$name' name='$name' value='" . esc_attr($val) . "' class='regular-text'>";
+            echo "<input type='" . esc_attr($type) . "' id='" . esc_attr($name) . "' name='" . esc_attr($name) . "' value='" . esc_attr((string)$val) . "' class='regular-text'>";
         }
         if ($desc) {
-            echo "<p class='description'>$desc</p>";
+            echo "<p class='description'>" . esc_html($desc) . "</p>";
         }
         echo "</td></tr>";
     }
@@ -290,7 +291,8 @@ class PostType {
         if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
             return;
         }
-        if (!isset($_POST['comyli_meta_nonce']) || !wp_verify_nonce($_POST['comyli_meta_nonce'], 'comyli_save_meta')) {
+        $metaNonce = isset($_POST['comyli_meta_nonce']) ? sanitize_text_field(wp_unslash((string)$_POST['comyli_meta_nonce'])) : '';
+        if ($metaNonce === '' || !wp_verify_nonce($metaNonce, 'comyli_save_meta')) {
             return;
         }
         if (!current_user_can('edit_post', $post_id)) {
@@ -301,7 +303,8 @@ class PostType {
         if (!empty($_POST['comyli_dbpass_clear'])) {
             $dbpass = '';
         } elseif (isset($_POST['comyli_dbpass']) && wp_unslash($_POST['comyli_dbpass']) !== '') {
-            $dbpass = wp_unslash($_POST['comyli_dbpass']);
+            // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- password may contain special characters
+            $dbpass = (string)wp_unslash($_POST['comyli_dbpass']);
         } else {
             $dbpass = (string)get_post_meta($post_id, '_comyli_dbpass', true);
             if ($dbpass === '') {
@@ -317,12 +320,12 @@ class PostType {
 
         $data = [
             'use_wp_db'   => isset($_POST['comyli_use_wp_db']) ? 1 : 0,
-            'db'          => sanitize_text_field($_POST['comyli_db'] ?? ''),
-            'dbuser'      => sanitize_text_field($_POST['comyli_dbuser'] ?? ''),
+            'db'          => isset($_POST['comyli_db']) ? sanitize_text_field(wp_unslash((string)$_POST['comyli_db'])) : '',
+            'dbuser'      => isset($_POST['comyli_dbuser']) ? sanitize_text_field(wp_unslash((string)$_POST['comyli_dbuser'])) : '',
             'dbpass'      => $dbpass,
-            'dbserver'    => sanitize_text_field($_POST['comyli_dbserver'] ?? ''),
-            'tables'      => sanitize_text_field($_POST['comyli_tables'] ?? ''),
-            'limit'       => max(1, intval($_POST['comyli_limit'] ?? 100)),
+            'dbserver'    => isset($_POST['comyli_dbserver']) ? sanitize_text_field(wp_unslash((string)$_POST['comyli_dbserver'])) : '',
+            'tables'      => isset($_POST['comyli_tables']) ? sanitize_text_field(wp_unslash((string)$_POST['comyli_tables'])) : '',
+            'limit'       => max(1, isset($_POST['comyli_limit']) ? absint(wp_unslash($_POST['comyli_limit'])) : 100),
             'edit'        => isset($_POST['comyli_edit']) ? 1 : 0,
             'primaryEdit' => isset($_POST['comyli_primaryEdit']) ? 1 : 0,
             'listQueries' => isset($_POST['comyli_listQueries']) ? 1 : 0,
@@ -639,7 +642,7 @@ class PostType {
                 }
             }
             $count = self::$queryCountsCache[(int)$post_id] ?? 0;
-            echo $count > 0 ? '<strong>' . $count . ' Abfrage(n)</strong>' : '<span style="color:#94a3b8;">—</span>';
+            echo $count > 0 ? '<strong>' . esc_html((string)$count) . ' Abfrage(n)</strong>' : '<span style="color:#94a3b8;">—</span>';
         } elseif ($column === 'comyli_shortcode') {
             $shortcode = str_replace('{{id}}', (string)$post_id, $this->config->plugin['replaceReplace']);
             echo '<input type="text" readonly value="' . esc_attr($shortcode) . '" style="width:100%; font-size:11px; font-family:monospace;" onclick="this.select();">';

@@ -17,7 +17,7 @@ class Assets {
     }
 
     private static function getVersion(?Config $config = null): string {
-        $version = '3.6.1';
+        $version = '3.6.2';
         $path = $config ? $config->plugin['path'] : dirname(__DIR__);
         if (function_exists('get_file_data') && file_exists($path . '/ha-comyli.php')) {
             $pluginData = get_file_data($path . '/ha-comyli.php', ['Version' => 'Version']);
@@ -43,6 +43,10 @@ class Assets {
         wp_register_script('TA_JS', $url . 'sql-admin/functions.js', ['jquery'], $version, ['strategy' => 'defer', 'in_footer' => true]);
         wp_register_style('select2', $url . 'select2/select2.min.css', [], '4.0.13');
         wp_register_script('select2', $url . 'select2/select2.min.js', ['jquery'], '4.0.13', ['strategy' => 'defer', 'in_footer' => true]);
+        wp_register_style('comyli-prism-css', $url . 'sql-admin/assets/prism.min.css', [], $version);
+        wp_register_script('comyli-codejar-js', $url . 'sql-admin/assets/codejar.js', [], $version, ['strategy' => 'defer', 'in_footer' => true]);
+        wp_register_script('comyli-prism-js', $url . 'sql-admin/assets/prism.min.js', [], $version, ['strategy' => 'defer', 'in_footer' => true]);
+        wp_register_script('comyli-prism-sql-js', $url . 'sql-admin/assets/prism-sql.min.js', ['comyli-prism-js'], $version, ['strategy' => 'defer', 'in_footer' => true]);
     }
 
     public static function ensureFrontendEnqueued(?Config $config = null): void {
@@ -58,6 +62,10 @@ class Assets {
         wp_enqueue_script('TA_JS');
         wp_enqueue_style('select2');
         wp_enqueue_script('select2');
+        wp_enqueue_style('comyli-prism-css');
+        wp_enqueue_script('comyli-codejar-js');
+        wp_enqueue_script('comyli-prism-js');
+        wp_enqueue_script('comyli-prism-sql-js');
     }
 
     public function enqueueScripts(): void {

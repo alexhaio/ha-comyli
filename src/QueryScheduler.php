@@ -89,6 +89,7 @@ class QueryScheduler {
                 $next = $this->calculateNextRunTime($interval, $now);
                 update_post_meta($post->ID, self::META_NEXT_RUN, $next);
                 if (empty($result['success'])) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
                     error_log('CoMyLi QueryScheduler Fehler (Query #' . $post->ID . '): ' . ($result['message'] ?? 'Unbekannter Fehler'));
                 }
             }
@@ -254,7 +255,7 @@ class QueryScheduler {
             foreach ($removed as $rm) {
                 $oldFile = $baseDir . ($rm['filename'] ?? '');
                 if (file_exists($oldFile)) {
-                    @unlink($oldFile);
+                    wp_delete_file($oldFile);
                 }
             }
             $archives = array_slice($archives, 0, 50);
@@ -276,7 +277,7 @@ class QueryScheduler {
      * Handles manual execution & archiving trigger from backend.
      */
     public function handleManualRunArchive(): void {
-        $queryId = (int)($_REQUEST['query_id'] ?? 0);
+        $queryId = isset($_REQUEST['query_id']) ? absint(wp_unslash($_REQUEST['query_id'])) : 0;
         check_admin_referer('comyli_manual_archive_' . $queryId);
 
         if (!current_user_can('edit_post', $queryId)) {
@@ -300,8 +301,10 @@ class QueryScheduler {
      * Secure CSV archive download endpoint.
      */
     public function handleDownloadArchive(): void {
-        $queryId   = (int)($_GET['query_id'] ?? 0);
-        $archiveId = sanitize_text_field($_GET['archive_id'] ?? '');
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- verified via check_admin_referer below
+        $queryId   = isset($_GET['query_id']) ? absint(wp_unslash($_GET['query_id'])) : 0;
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- verified via check_admin_referer below
+        $archiveId = isset($_GET['archive_id']) ? sanitize_text_field(wp_unslash($_GET['archive_id'])) : '';
 
         if (!$queryId || empty($archiveId)) {
             wp_die('Ungültige Anfrage.');
@@ -366,8 +369,8 @@ class QueryScheduler {
      * Deletes an archive file and removes its entry from post metadata.
      */
     public function handleDeleteArchive(): void {
-        $queryId   = (int)($_REQUEST['query_id'] ?? 0);
-        $archiveId = sanitize_text_field($_REQUEST['archive_id'] ?? '');
+        $queryId   = isset($_REQUEST['query_id']) ? absint(wp_unslash($_REQUEST['query_id'])) : 0;
+        $archiveId = isset($_REQUEST['archive_id']) ? sanitize_text_field(wp_unslash($_REQUEST['archive_id'])) : '';
         check_admin_referer('comyli_delete_archive_' . $queryId);
 
         if (!current_user_can('edit_post', $queryId)) {
@@ -384,7 +387,7 @@ class QueryScheduler {
                 if (($arc['id'] ?? '') === $archiveId) {
                     $file = $baseDir . basename($arc['filename']);
                     if (file_exists($file)) {
-                        @unlink($file);
+                        wp_delete_file($file);
                     }
                 } else {
                     $newArchives[] = $arc;

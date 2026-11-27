@@ -488,7 +488,9 @@ class Shortcode {
             $envJson = function_exists('wp_json_encode')
                 ? wp_json_encode($wpEnv, JSON_HEX_TAG | JSON_HEX_AMP)
                 : json_encode($wpEnv, JSON_HEX_TAG | JSON_HEX_AMP);
-            echo "<script>window.COMYLI_ENV = " . $envJson . ";</script>";
+            if (function_exists('wp_add_inline_script')) {
+                wp_add_inline_script('TA_JS', 'window.COMYLI_ENV = ' . $envJson . ';', 'before');
+            }
 
             // 1. Output Custom CSS from Table
             $tableCssParts = [];
@@ -504,7 +506,9 @@ class Shortcode {
             $tableCss = implode("\n", array_unique($tableCssParts));
             if (!empty($tableCss)) {
                 $cleanTableCss = trim((string)preg_replace('/<\/?\s*style\b[^>]*>/i', '', $tableCss));
-                echo "<style id='comyli-custom-css-table-" . $postId . "'>\n" . wp_strip_all_tags($cleanTableCss) . "\n</style>";
+                if (function_exists('wp_add_inline_style')) {
+                    wp_add_inline_style('TAwp_CSS', wp_strip_all_tags($cleanTableCss));
+                }
             }
 
             // 2. Output Custom CSS from Query
@@ -516,7 +520,9 @@ class Shortcode {
                     $queryCss = (string)get_post_meta($queryPost->ID, QueryManager::META_CUSTOM_CSS, true);
                     if (!empty($queryCss)) {
                         $cleanQueryCss = trim((string)preg_replace('/<\/?\s*style\b[^>]*>/i', '', $queryCss));
-                        echo "<style id='comyli-custom-css-query-" . $queryPost->ID . "'>\n" . wp_strip_all_tags($cleanQueryCss) . "\n</style>";
+                        if (function_exists('wp_add_inline_style')) {
+                            wp_add_inline_style('TAwp_CSS', wp_strip_all_tags($cleanQueryCss));
+                        }
                     }
                 }
             }
@@ -535,7 +541,9 @@ class Shortcode {
             $tableJs = implode("\n", array_unique($tableJsParts));
             if (!empty($tableJs)) {
                 $cleanTableJs = trim((string)preg_replace('/<\/?\s*script\b[^>]*>/i', '', $tableJs));
-                echo "<script id='comyli-custom-js-table-" . $postId . "'>\n" . $cleanTableJs . "\n</script>";
+                if (function_exists('wp_add_inline_script')) {
+                    wp_add_inline_script('TA_JS', $cleanTableJs, 'after');
+                }
             }
 
             // 4. Output Custom JS from Query
@@ -543,7 +551,9 @@ class Shortcode {
                 $queryJs = (string)get_post_meta($queryPost->ID, QueryManager::META_CUSTOM_JS, true);
                 if (!empty($queryJs)) {
                     $cleanQueryJs = trim((string)preg_replace('/<\/?\s*script\b[^>]*>/i', '', $queryJs));
-                    echo "<script id='comyli-custom-js-query-" . $queryPost->ID . "'>\n" . $cleanQueryJs . "\n</script>";
+                    if (function_exists('wp_add_inline_script')) {
+                        wp_add_inline_script('TA_JS', $cleanQueryJs, 'after');
+                    }
                 }
             }
         }

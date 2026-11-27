@@ -113,14 +113,15 @@ class Blocks {
             'ha-comyli-blocks-js',
             $url . 'js/blocks.js',
             ['wp-blocks', 'wp-element', 'wp-components', 'wp-block-editor'],
-            '3.6.1'
+            '3.6.2',
+            ['in_footer' => true]
         );
 
         wp_register_style(
             'ha-comyli-blocks-css',
             $url . 'css/blocks.css',
             [],
-            '3.6.1'
+            '3.6.2'
         );
 
         // Discover CPT-defined queries (from QueryManager)
@@ -310,64 +311,52 @@ class Blocks {
 
         $chartId = 'comyli_chart_' . wp_unique_id();
         $chartType = in_array($attributes['chartType'] ?? '', ['bar', 'line', 'pie', 'doughnut'], true) ? $attributes['chartType'] : 'bar';
-        $title = !empty($attributes['title']) ? esc_html((string)$attributes['title']) : '';
+        $title = !empty($attributes['title']) ? (string)$attributes['title'] : '';
         $height = max(200, min(800, (int)($attributes['height'] ?? 350)));
 
-        $colors = "['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16']";
-
-        $jsonLabels = wp_json_encode($labels, JSON_HEX_TAG | JSON_HEX_AMP);
-        $jsonData = wp_json_encode($data, JSON_HEX_TAG | JSON_HEX_AMP);
+        $colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
         // Enqueue local Chart.js bundle (GDPR-safe, no external CDN)
         wp_enqueue_script('comyli-chartjs', $this->config->plugin['url'] . 'js/chart.umd.min.js', [], '4.4.2', true);
 
+        $chartConfig = [
+            'type' => $chartType,
+            'data' => [
+                'labels'   => $labels,
+                'datasets' => [[
+                    'label'           => (string)$valCol,
+                    'data'            => $data,
+                    'backgroundColor' => $colors,
+                    'borderWidth'     => 1,
+                ]],
+            ],
+            'options' => [
+                'responsive'          => true,
+                'maintainAspectRatio' => false,
+                'plugins'             => [
+                    'legend' => [
+                        'display' => in_array($chartType, ['pie', 'doughnut'], true),
+                    ],
+                ],
+            ],
+        ];
+        $chartJson = wp_json_encode($chartConfig, JSON_HEX_TAG | JSON_HEX_AMP);
+        $inlineJs = sprintf(
+            '(function(){function initChart(){if(typeof Chart==="undefined"){setTimeout(initChart,50);return;}var ctx=document.getElementById(%s);if(!ctx)return;new Chart(ctx,%s);}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",initChart);}else{initChart();}})();',
+            wp_json_encode($chartId),
+            $chartJson ?: '{}'
+        );
+        wp_add_inline_script('comyli-chartjs', $inlineJs, 'after');
+
         ob_start();
         ?>
         <div class="comyli-chart-container">
-            <?php if ($title): ?>
-                <h4 class="comyli-chart-title"><?php echo $title; ?></h4>
+            <?php if ($title !== ''): ?>
+                <h4 class="comyli-chart-title"><?php echo esc_html($title); ?></h4>
             <?php endif; ?>
-            <div class="comyli-chart-canvas-wrap" style="height: <?php echo $height; ?>px;">
+            <div class="comyli-chart-canvas-wrap" style="height: <?php echo absint($height); ?>px;">
                 <canvas id="<?php echo esc_attr($chartId); ?>"></canvas>
             </div>
-            <script>
-            (function() {
-                function initChart() {
-                    if (typeof Chart === 'undefined') {
-                        setTimeout(initChart, 50);
-                        return;
-                    }
-                    var ctx = document.getElementById('<?php echo esc_js($chartId); ?>');
-                    if (!ctx) return;
-                    new Chart(ctx, {
-                        type: '<?php echo esc_js($chartType); ?>',
-                        data: {
-                            labels: <?php echo $jsonLabels; ?>,
-                            datasets: [{
-                                label: '<?php echo esc_js($valCol); ?>',
-                                data: <?php echo $jsonData; ?>,
-                                backgroundColor: <?php echo $colors; ?>,
-                                borderWidth: 1
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                                legend: {
-                                    display: '<?php echo in_array($chartType, ['pie', 'doughnut'], true) ? 'true' : 'false'; ?>' === 'true'
-                                }
-                            }
-                        }
-                    });
-                }
-                if (document.readyState === 'loading') {
-                    document.addEventListener('DOMContentLoaded', initChart);
-                } else {
-                    initChart();
-                }
-            })();
-            </script>
         </div>
         <?php
         return ob_get_clean() ?: '';
@@ -437,31 +426,31 @@ class Blocks {
             }
         }
 
-        $formattedVal = is_numeric($val) ? number_format_i18n((float)$val) : esc_html((string)$val);
-        $title = !empty($attributes['title']) ? esc_html((string)$attributes['title']) : 'Kennzahl';
-        $unit = !empty($attributes['unit']) ? esc_html((string)$attributes['unit']) : '';
-        $trend = !empty($attributes['trend']) ? esc_html((string)$attributes['trend']) : '';
+        $formattedVal = is_numeric($val) ? number_format_i18n((float)$val) : (string)$val;
+        $title = !empty($attributes['title']) ? (string)$attributes['title'] : 'Kennzahl';
+        $unit = !empty($attributes['unit']) ? (string)$attributes['unit'] : '';
+        $trend = !empty($attributes['trend']) ? (string)$attributes['trend'] : '';
         $trendDir = in_array($attributes['trendDirection'] ?? '', ['up', 'down', 'neutral'], true) ? $attributes['trendDirection'] : 'up';
-        $icon = !empty($attributes['icon']) ? esc_html((string)$attributes['icon']) : '📊';
-        $color = !empty($attributes['color']) ? esc_attr((string)$attributes['color']) : '#3b82f6';
+        $icon = !empty($attributes['icon']) ? (string)$attributes['icon'] : '📊';
+        $color = !empty($attributes['color']) ? (string)$attributes['color'] : '#3b82f6';
 
         ob_start();
         ?>
-        <div class="comyli-kpi-card" style="border-top: 4px solid <?php echo $color; ?>;">
+        <div class="comyli-kpi-card" style="border-top: 4px solid <?php echo esc_attr($color); ?>;">
             <div class="comyli-kpi-header">
-                <h4 class="comyli-kpi-title"><?php echo $title; ?></h4>
-                <span class="comyli-kpi-icon"><?php echo $icon; ?></span>
+                <h4 class="comyli-kpi-title"><?php echo esc_html($title); ?></h4>
+                <span class="comyli-kpi-icon"><?php echo esc_html($icon); ?></span>
             </div>
             <div class="comyli-kpi-body">
-                <span class="comyli-kpi-value"><?php echo $formattedVal; ?></span>
-                <?php if ($unit): ?>
-                    <span class="comyli-kpi-unit"><?php echo $unit; ?></span>
+                <span class="comyli-kpi-value"><?php echo esc_html($formattedVal); ?></span>
+                <?php if ($unit !== ''): ?>
+                    <span class="comyli-kpi-unit"><?php echo esc_html($unit); ?></span>
                 <?php endif; ?>
             </div>
-            <?php if ($trend): ?>
+            <?php if ($trend !== ''): ?>
                 <div class="comyli-kpi-footer">
                     <span class="comyli-kpi-trend comyli-kpi-trend-<?php echo esc_attr($trendDir); ?>">
-                        <?php echo $trend; ?>
+                        <?php echo esc_html($trend); ?>
                     </span>
                 </div>
             <?php endif; ?>
